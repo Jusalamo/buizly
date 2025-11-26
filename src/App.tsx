@@ -13,6 +13,7 @@ import Network from "./pages/Network";
 import ConnectionDetail from "./pages/ConnectionDetail";
 import Capture from "./pages/Capture";
 import Schedule from "./pages/Schedule";
+import MeetingDetail from "./pages/MeetingDetail";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -107,6 +108,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <Schedule />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/meeting/:id"
+            element={
+              <ProtectedRoute>
+                <MeetingDetail />
               </ProtectedRoute>
             }
           />
