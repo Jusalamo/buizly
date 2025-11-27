@@ -1,19 +1,30 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Search, Filter, Trash2, MoreVertical, Calendar, MapPin, Tag } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 
 type Connection = Database["public"]["Tables"]["connections"]["Row"];
 
+type DateFilter = "all" | "week" | "month" | "year";
+
 export default function Network() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
     loadConnections();
@@ -37,33 +48,93 @@ export default function Network() {
       setConnections(data || []);
     } catch (error) {
       console.error("Error loading connections:", error);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const filteredConnections = connections.filter((connection) =>
-    connection.connection_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    connection.connection_email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    connection.connection_company?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    
+    try {
+      const { error } = await supabase
+        .from("connections")
+        .delete()
+        .eq("id", deleteId);
 
-  if (loading) {
-    return (
-      <Layout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary"></div>
-        </div>
-      </Layout>
-    );
-  }
+      if (error) throw error;
+
+      setConnections(prev => prev.filter(c => c.id !== deleteId));
+      toast({
+        title: "Connection removed",
+        description: "The connection has been deleted",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteId(null);
+    }
+  };
+
+  // Get unique companies for filter
+  const companies = useMemo(() => {
+    const companySet = new Set<string>();
+    connections.forEach(c => {
+      if (c.connection_company) {
+        companySet.add(c.connection_company);
+      }
+    });
+    return Array.from(companySet).sort();
+  }, [connections]);
+
+  // Filter connections
+  const filteredConnections = useMemo(() => {
+    let filtered = [...connections];
+
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(c =>
+        c.connection_name.toLowerCase().includes(query) ||
+        c.connection_email?.toLowerCase().includes(query) ||
+        c.connection_company?.toLowerCase().includes(query) ||
+        c.connection_title?.toLowerCase().includes(query)
+      );
+    }
+
+    // Date filter
+    const now = new Date();
+    switch (dateFilter) {
+      case "week":
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        filtered = filtered.filter(c => new Date(c.created_at) > weekAgo);
+        break;
+      case "month":
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        filtered = filtered.filter(c => new Date(c.created_at) > monthAgo);
+        break;
+      case "year":
+        const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        filtered = filtered.filter(c => new Date(c.created_at) > yearAgo);
+        break;
+    }
+
+    // Company filter
+    if (companyFilter !== "all") {
+      filtered = filtered.filter(c => c.connection_company === companyFilter);
+    }
+
+    return filtered;
+  }, [connections, searchQuery, dateFilter, companyFilter]);
 
   return (
     <Layout>
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">Network</h1>
-          <p className="text-muted-foreground">Manage your professional connections</p>
+          <h1 className="text-2xl font-bold text-foreground mb-2">Network</h1>
+          <p className="text-muted-foreground text-sm">Manage your professional connections</p>
         </div>
 
         {/* Search Bar */}
@@ -71,11 +142,68 @@ export default function Network() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
             type="text"
-            placeholder="Search connections..."
+            placeholder="Search by name, email, company..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 bg-secondary border-border text-foreground"
           />
+        </div>
+
+        {/* Filters - Compact Pill Style */}
+        <div className="flex gap-2 flex-wrap">
+          <div className="flex items-center gap-2 bg-secondary rounded-full px-3 py-1.5">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
+              <SelectTrigger className="w-[100px] h-7 border-0 bg-transparent p-0 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Time</SelectItem>
+                <SelectItem value="week">Past Week</SelectItem>
+                <SelectItem value="month">Past Month</SelectItem>
+                <SelectItem value="year">Past Year</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {companies.length > 0 && (
+            <div className="flex items-center gap-2 bg-secondary rounded-full px-3 py-1.5">
+              <Tag className="h-4 w-4 text-muted-foreground" />
+              <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                <SelectTrigger className="w-[120px] h-7 border-0 bg-transparent p-0 text-sm">
+                  <SelectValue placeholder="Company" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Companies</SelectItem>
+                  {companies.map(company => (
+                    <SelectItem key={company} value={company}>{company}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {(dateFilter !== "all" || companyFilter !== "all") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setDateFilter("all");
+                setCompanyFilter("all");
+              }}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Clear filters
+            </Button>
+          )}
+        </div>
+
+        {/* Stats */}
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <span>{filteredConnections.length} connections</span>
+          {filteredConnections.length !== connections.length && (
+            <span className="text-primary">({connections.length} total)</span>
+          )}
         </div>
 
         {/* Connections List */}
@@ -83,38 +211,89 @@ export default function Network() {
           {filteredConnections.length === 0 ? (
             <Card className="bg-card border-border p-8 text-center">
               <p className="text-muted-foreground">
-                {searchQuery ? "No connections found" : "No connections yet. Start by capturing a new meeting!"}
+                {searchQuery || dateFilter !== "all" || companyFilter !== "all"
+                  ? "No connections found with current filters"
+                  : "No connections yet. Start by capturing a new meeting!"}
               </p>
+              {!searchQuery && dateFilter === "all" && companyFilter === "all" && (
+                <Button onClick={() => navigate("/capture")} className="mt-4 bg-primary text-primary-foreground">
+                  Add Connection
+                </Button>
+              )}
             </Card>
           ) : (
             filteredConnections.map((connection) => (
               <Card
                 key={connection.id}
-                className="bg-card border-border p-4 cursor-pointer hover:bg-card/80 transition-all hover:border-primary/50"
-                onClick={() => navigate(`/connection/${connection.id}`)}
+                className="bg-card border-border p-4 hover:bg-card/80 hover:border-primary/50 transition-all"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                    <span className="text-primary text-lg font-bold">
-                      {connection.connection_name.charAt(0).toUpperCase()}
-                    </span>
+                  <div 
+                    className="flex-1 flex items-center gap-4 cursor-pointer"
+                    onClick={() => navigate(`/connection/${connection.id}`)}
+                  >
+                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                      <span className="text-primary text-lg font-bold">
+                        {connection.connection_name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-foreground">{connection.connection_name}</p>
+                      {connection.connection_title && (
+                        <p className="text-sm text-primary">{connection.connection_title}</p>
+                      )}
+                      {connection.connection_company && (
+                        <p className="text-sm text-muted-foreground">{connection.connection_company}</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-foreground">{connection.connection_name}</p>
-                    {connection.connection_title && (
-                      <p className="text-sm text-primary">{connection.connection_title}</p>
-                    )}
-                    {connection.connection_company && (
-                      <p className="text-sm text-muted-foreground">{connection.connection_company}</p>
-                    )}
-                  </div>
-                  <div className="w-3 h-3 rounded-full bg-primary flex-shrink-0"></div>
+                  
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="flex-shrink-0">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => navigate(`/connection/${connection.id}`)}>
+                        View Details
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate(`/schedule?connection=${connection.id}`)}>
+                        Schedule Meeting
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => setDeleteId(connection.id)}
+                        className="text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </Card>
             ))
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-foreground">Delete Connection</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this connection? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 }

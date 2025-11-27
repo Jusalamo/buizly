@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mic } from "lucide-react";
+import { Loader2, Mic, MicOff, Play, Pause, Trash2, Clock } from "lucide-react";
 
 export default function Capture() {
   const [step, setStep] = useState(1);
@@ -22,6 +23,102 @@ export default function Capture() {
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        setAudioBlob(blob);
+        setAudioUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+      
+      timerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+
+      toast({
+        title: "Recording started",
+        description: "Speak clearly into your microphone",
+      });
+    } catch (error) {
+      toast({
+        title: "Microphone access denied",
+        description: "Please allow microphone access to record voice notes",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+      toast({
+        title: "Recording saved",
+        description: `Voice note recorded (${formatDuration(recordingDuration)})`,
+      });
+    }
+  };
+
+  const playAudio = () => {
+    if (audioUrl && audioRef.current) {
+      audioRef.current.play();
+      setIsPlaying(true);
+    }
+  };
+
+  const pauseAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  const deleteRecording = () => {
+    setAudioBlob(null);
+    setAudioUrl(null);
+    setRecordingDuration(0);
+    setIsPlaying(false);
+    toast({
+      title: "Recording deleted",
+    });
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const handleStepOne = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +155,18 @@ export default function Capture() {
 
       if (connectionError) throw connectionError;
 
+      // Upload voice note if exists
+      if (audioBlob && connectionData) {
+        const fileName = `voice-notes/${user.id}/${connectionData.id}_${Date.now()}.webm`;
+        const { error: uploadError } = await supabase.storage
+          .from('meeting-media')
+          .upload(fileName, audioBlob);
+
+        if (uploadError) {
+          console.error('Voice note upload error:', uploadError);
+        }
+      }
+
       toast({
         title: "Connection saved!",
         description: "Your new connection has been added to your network.",
@@ -79,10 +188,16 @@ export default function Capture() {
     <Layout>
       <div className="max-w-2xl mx-auto p-6 space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">Capture Meeting Info</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl font-bold text-foreground mb-2">Capture Meeting Info</h1>
+          <p className="text-muted-foreground text-sm">
             {step === 1 ? "Enter basic details" : "Add additional information"}
           </p>
+        </div>
+
+        {/* Progress indicator */}
+        <div className="flex gap-2">
+          <div className={`h-1 flex-1 rounded-full ${step >= 1 ? 'bg-primary' : 'bg-secondary'}`} />
+          <div className={`h-1 flex-1 rounded-full ${step >= 2 ? 'bg-primary' : 'bg-secondary'}`} />
         </div>
 
         {step === 1 ? (
@@ -161,19 +276,74 @@ export default function Capture() {
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="bg-secondary border-border text-foreground min-h-[150px]"
+                className="bg-secondary border-border text-foreground min-h-[120px]"
                 placeholder="Key discussion points, follow-up items..."
               />
             </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full border-primary text-primary hover:bg-primary/10"
-            >
-              <Mic className="h-4 w-4 mr-2" />
-              Record Voice Note
-            </Button>
+            {/* Voice Recording Section */}
+            <Card className="bg-secondary border-border p-4 space-y-4">
+              <Label className="text-foreground">Voice Note</Label>
+              
+              {!audioUrl ? (
+                <Button
+                  type="button"
+                  variant={isRecording ? "destructive" : "outline"}
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={`w-full ${!isRecording ? 'border-primary text-primary hover:bg-primary/10' : ''}`}
+                >
+                  {isRecording ? (
+                    <>
+                      <MicOff className="h-4 w-4 mr-2" />
+                      Stop Recording ({formatDuration(recordingDuration)})
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="h-4 w-4 mr-2" />
+                      Record Voice Note
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 bg-card rounded-lg p-3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={isPlaying ? pauseAudio : playAudio}
+                      className="text-primary"
+                    >
+                      {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                    </Button>
+                    <div className="flex-1">
+                      <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                        <div className="h-full bg-primary w-full" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      {formatDuration(recordingDuration)}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={deleteRecording}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <audio
+                    ref={audioRef}
+                    src={audioUrl}
+                    onEnded={() => setIsPlaying(false)}
+                    className="hidden"
+                  />
+                </div>
+              )}
+            </Card>
 
             <div className="flex gap-4">
               <Button
