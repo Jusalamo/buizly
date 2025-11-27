@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { QRCode } from "@/components/QRCode";
-import { Mail, Phone, Globe, Briefcase, Share2, Edit, UserPlus } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Mail, Phone, Globe, Building, Briefcase, Share2, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -50,15 +50,16 @@ export default function Profile() {
   const handleShare = async () => {
     if (!profile) return;
     
+    const shareUrl = `${window.location.origin}/connect/${profile.id}`;
+    
     try {
       await navigator.share({
         title: `${profile.full_name}'s Business Card`,
         text: `Connect with ${profile.full_name}`,
-        url: window.location.href,
+        url: shareUrl,
       });
     } catch (error) {
-      // Fallback: copy to clipboard
-      navigator.clipboard.writeText(window.location.href);
+      navigator.clipboard.writeText(shareUrl);
       toast({
         title: "Link copied!",
         description: "Share this link to connect",
@@ -69,7 +70,7 @@ export default function Profile() {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center min-h-screen">
+        <div className="flex items-center justify-center min-h-[50vh]">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary"></div>
         </div>
       </Layout>
@@ -79,7 +80,7 @@ export default function Profile() {
   if (!profile) {
     return (
       <Layout>
-        <div className="flex items-center justify-center min-h-screen">
+        <div className="flex items-center justify-center min-h-[50vh]">
           <p className="text-muted-foreground">Profile not found</p>
         </div>
       </Layout>
@@ -88,78 +89,123 @@ export default function Profile() {
 
   return (
     <Layout>
-      <div className="max-w-2xl mx-auto p-6 space-y-8">
-        {/* QR Code Section */}
-        <div className="flex justify-center">
-          <QRCode 
-            url={profile.qr_code_url || `${window.location.origin}/profile/${profile.id}`}
-            size={250}
-            className="shadow-lg shadow-primary/20"
-          />
-        </div>
-
-        {/* Profile Info */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold text-foreground">{profile.full_name}</h1>
-          {profile.job_title && (
-            <p className="text-lg text-primary">{profile.job_title}</p>
-          )}
-          {profile.company && (
-            <p className="text-muted-foreground">{profile.company}</p>
-          )}
-        </div>
-
-        {/* Contact Details */}
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
-          {profile.email && (
-            <div className="flex items-center gap-3 text-foreground">
-              <Mail className="h-5 w-5 text-primary" />
-              <span>{profile.email}</span>
-            </div>
-          )}
-          {profile.phone && (
-            <div className="flex items-center gap-3 text-foreground">
-              <Phone className="h-5 w-5 text-primary" />
-              <span>{profile.phone}</span>
-            </div>
-          )}
-          {profile.website && (
-            <div className="flex items-center gap-3 text-foreground">
-              <Globe className="h-5 w-5 text-primary" />
-              <span>{profile.website}</span>
-            </div>
-          )}
-          {profile.bio && (
-            <div className="pt-4 border-t border-border">
-              <p className="text-muted-foreground">{profile.bio}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="grid grid-cols-3 gap-4">
+      <div className="max-w-2xl mx-auto p-6 space-y-6">
+        {/* Profile Header */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-foreground">My Profile</h1>
           <Button
-            onClick={handleShare}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Share2 className="h-4 w-4 mr-2" />
-            Share
-          </Button>
-          <Button
+            onClick={() => navigate("/profile/edit")}
             variant="outline"
             className="border-primary text-primary hover:bg-primary/10"
           >
-            <UserPlus className="h-4 w-4 mr-2" />
-            Connect
-          </Button>
-          <Button
-            onClick={() => navigate("/profile/edit")}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
             <Edit className="h-4 w-4 mr-2" />
-            Edit
+            Edit Profile
           </Button>
         </div>
+
+        {/* Profile Card */}
+        <Card className="bg-card border-border p-6">
+          <div className="flex items-start gap-4">
+            <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 border-2 border-primary">
+              <span className="text-primary text-3xl font-bold">
+                {profile.full_name?.charAt(0)?.toUpperCase() || 'U'}
+              </span>
+            </div>
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold text-foreground">{profile.full_name}</h2>
+              {profile.job_title && (
+                <p className="text-primary font-medium mt-1">{profile.job_title}</p>
+              )}
+              {profile.company && (
+                <p className="text-muted-foreground">{profile.company}</p>
+              )}
+            </div>
+          </div>
+
+          {profile.bio && (
+            <p className="text-muted-foreground mt-4 pt-4 border-t border-border">
+              {profile.bio}
+            </p>
+          )}
+        </Card>
+
+        {/* Contact Information */}
+        <Card className="bg-card border-border p-6 space-y-4">
+          <h3 className="text-lg font-semibold text-foreground mb-4">Contact Information</h3>
+          
+          <div className="space-y-4">
+            {profile.email && (
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Mail className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Email</p>
+                  <p className="text-foreground">{profile.email}</p>
+                </div>
+              </div>
+            )}
+            
+            {profile.phone && (
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Phone className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Phone</p>
+                  <p className="text-foreground">{profile.phone}</p>
+                </div>
+              </div>
+            )}
+            
+            {profile.website && (
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Globe className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Website</p>
+                  <a href={profile.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                    {profile.website}
+                  </a>
+                </div>
+              </div>
+            )}
+            
+            {profile.company && (
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Building className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Company</p>
+                  <p className="text-foreground">{profile.company}</p>
+                </div>
+              </div>
+            )}
+            
+            {profile.job_title && (
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Briefcase className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Job Title</p>
+                  <p className="text-foreground">{profile.job_title}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Share Button */}
+        <Button
+          onClick={handleShare}
+          className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+        >
+          <Share2 className="h-4 w-4 mr-2" />
+          Share Profile
+        </Button>
       </div>
     </Layout>
   );
