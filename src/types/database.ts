@@ -42,6 +42,10 @@ export interface UserSettings {
   onboarding_completed: boolean;
   email_notifications: boolean;
   push_notifications: boolean;
+  profile_visibility: string;
+  google_calendar_connected: boolean;
+  google_refresh_token: string | null;
+  theme: string;
   created_at: string;
   updated_at: string;
 }
@@ -87,6 +91,7 @@ export interface Profile {
   website: string | null;
   bio: string | null;
   qr_code_url: string | null;
+  avatar_url: string | null;
   created_at: string;
   updated_at: string;
 }

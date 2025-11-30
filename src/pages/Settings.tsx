@@ -6,23 +6,31 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   User, Bell, Database, Settings as SettingsIcon, LogOut, 
   ChevronRight, Calendar, Moon, Sun, Eye, Users, RefreshCw
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserSettings } from "@/hooks/useUserSettings";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export default function Settings() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { settings, loading, updateSettings, refetch } = useUserSettings();
+  const { theme, setTheme } = useTheme();
   
-  const [darkMode, setDarkMode] = useState(true);
   const [calendarSync, setCalendarSync] = useState(false);
-  const [profileVisibility, setProfileVisibility] = useState(true);
-  const [autoAcceptConnections, setAutoAcceptConnections] = useState(false);
+  const [profileVisibility, setProfileVisibility] = useState("public");
   const [syncing, setSyncing] = useState(false);
+  const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
+
+  useEffect(() => {
+    if (settings?.profile_visibility) {
+      setProfileVisibility(settings.profile_visibility);
+    }
+  }, [settings]);
 
   const handleLogout = async () => {
     try {
@@ -69,6 +77,66 @@ export default function Settings() {
         description: "Failed to update settings",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleProfileVisibilityChange = async (value: string) => {
+    try {
+      await updateSettings({ profile_visibility: value });
+      setProfileVisibility(value);
+      toast({
+        title: "Profile visibility updated",
+        description: `Your profile is now ${value}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update profile visibility",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const connectGoogleCalendar = async () => {
+    try {
+      const redirectUri = `${window.location.origin}/oauth2callback`;
+      
+      const { data, error } = await supabase.functions.invoke('google-auth-start', {
+        body: { redirectUri }
+      });
+
+      if (error) throw error;
+
+      // Open Google OAuth in new window
+      window.location.href = data.authUrl;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const disconnectGoogleCalendar = async () => {
+    setDisconnectingGoogle(true);
+    try {
+      const { error } = await supabase.functions.invoke('google-revoke');
+      if (error) throw error;
+
+      await refetch();
+      toast({
+        title: "Disconnected",
+        description: "Google Calendar has been disconnected",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setDisconnectingGoogle(false);
     }
   };
 
@@ -128,27 +196,45 @@ export default function Settings() {
           </div>
         </Card>
 
-        {/* Calendar Sync */}
+        {/* Google Calendar Integration */}
         <Card className="bg-card border-border p-4">
           <div className="flex items-center gap-4 mb-4">
             <div className="p-2 bg-primary/10 rounded-lg">
               <Calendar className="h-5 w-5 text-primary" />
             </div>
-            <span className="text-foreground font-medium">Calendar Integration</span>
+            <div className="flex-1">
+              <span className="text-foreground font-medium">Google Calendar</span>
+              <p className="text-xs text-muted-foreground mt-1">
+                {settings?.google_calendar_connected 
+                  ? "Connected - meetings will sync automatically" 
+                  : "Connect to sync meetings to your calendar"}
+              </p>
+            </div>
           </div>
           
-          <div className="space-y-4 pl-14">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="calendar-sync" className="text-foreground">Sync to Google Calendar</Label>
-                <p className="text-xs text-muted-foreground">Automatically add meetings to your calendar</p>
-              </div>
-              <Switch
-                id="calendar-sync"
-                checked={calendarSync}
-                onCheckedChange={setCalendarSync}
-              />
-            </div>
+          <div className="pl-14">
+            {settings?.google_calendar_connected ? (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={disconnectGoogleCalendar}
+                disabled={disconnectingGoogle}
+              >
+                {disconnectingGoogle ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : null}
+                Disconnect
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={connectGoogleCalendar}
+                className="border-primary text-primary"
+              >
+                Connect Google Calendar
+              </Button>
+            )}
           </div>
         </Card>
 
@@ -189,14 +275,22 @@ export default function Settings() {
           <div className="space-y-4 pl-14">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                {darkMode ? <Moon className="h-4 w-4 text-muted-foreground" /> : <Sun className="h-4 w-4 text-muted-foreground" />}
-                <Label htmlFor="dark-mode" className="text-foreground">Dark Mode</Label>
+                {theme === 'dark' ? <Moon className="h-4 w-4 text-muted-foreground" /> : <Sun className="h-4 w-4 text-muted-foreground" />}
+                <div>
+                  <Label htmlFor="theme" className="text-foreground">Theme</Label>
+                  <p className="text-xs text-muted-foreground">Choose your preferred theme</p>
+                </div>
               </div>
-              <Switch
-                id="dark-mode"
-                checked={darkMode}
-                onCheckedChange={setDarkMode}
-              />
+              <Select value={theme} onValueChange={(value: any) => setTheme(value)}>
+                <SelectTrigger className="w-32 bg-secondary border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="light">Light</SelectItem>
+                  <SelectItem value="dark">Dark</SelectItem>
+                  <SelectItem value="auto">Auto</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             
             <div className="flex items-center justify-between">
@@ -204,41 +298,23 @@ export default function Settings() {
                 <Eye className="h-4 w-4 text-muted-foreground" />
                 <div>
                   <Label htmlFor="profile-vis" className="text-foreground">Profile Visibility</Label>
-                  <p className="text-xs text-muted-foreground">Allow others to find your profile</p>
+                  <p className="text-xs text-muted-foreground">Control who can see your profile</p>
                 </div>
               </div>
-              <Switch
-                id="profile-vis"
-                checked={profileVisibility}
-                onCheckedChange={setProfileVisibility}
-              />
+              <Select value={profileVisibility} onValueChange={handleProfileVisibilityChange}>
+                <SelectTrigger className="w-32 bg-secondary border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public">Public</SelectItem>
+                  <SelectItem value="connections">Connections</SelectItem>
+                  <SelectItem value="private">Private</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </Card>
 
-        {/* Connection Settings */}
-        <Card className="bg-card border-border p-4">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <Users className="h-5 w-5 text-primary" />
-            </div>
-            <span className="text-foreground font-medium">Connection Settings</span>
-          </div>
-          
-          <div className="space-y-4 pl-14">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="auto-accept" className="text-foreground">Auto-accept Connections</Label>
-                <p className="text-xs text-muted-foreground">Automatically accept all connection requests</p>
-              </div>
-              <Switch
-                id="auto-accept"
-                checked={autoAcceptConnections}
-                onCheckedChange={setAutoAcceptConnections}
-              />
-            </div>
-          </div>
-        </Card>
 
         {/* Logout Button */}
         <Button

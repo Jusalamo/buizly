@@ -1,1 +1,10 @@
 project_id = "azqopaixiweqtenuanas"
+
+[functions.google-auth-start]
+verify_jwt = false
+
+[functions.google-auth-callback]
+
+[functions.google-create-event]
+
+[functions.google-revoke]

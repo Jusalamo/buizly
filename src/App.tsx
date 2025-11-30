@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import Dashboard from "./pages/Dashboard";
 import Network from "./pages/Network";
 import Capture from "./pages/Capture";
@@ -15,32 +15,38 @@ import Auth from "./pages/Auth";
 import ConnectionDetail from "./pages/ConnectionDetail";
 import MeetingDetail from "./pages/MeetingDetail";
 import Connect from "./pages/Connect";
+import Contact from "./pages/Contact";
+import OAuth2Callback from "./pages/OAuth2Callback";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/network" element={<Network />} />
-          <Route path="/capture" element={<Capture />} />
-          <Route path="/schedule" element={<Schedule />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/profile/edit" element={<ProfileEdit />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/connection/:id" element={<ConnectionDetail />} />
-          <Route path="/meeting/:id" element={<MeetingDetail />} />
-          <Route path="/connect/:id" element={<Connect />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <ThemeProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/network" element={<Network />} />
+            <Route path="/capture" element={<Capture />} />
+            <Route path="/schedule" element={<Schedule />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/edit" element={<ProfileEdit />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/connection/:id" element={<ConnectionDetail />} />
+            <Route path="/meeting/:id" element={<MeetingDetail />} />
+            <Route path="/connect" element={<Connect />} />
+            <Route path="/contact/:userId" element={<Contact />} />
+            <Route path="/oauth2callback" element={<OAuth2Callback />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
