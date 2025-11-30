@@ -83,6 +83,43 @@ export function useMeetings() {
         if (participantsError) throw participantsError;
       }
 
+      // Check if Google Calendar is connected and create event
+      try {
+        const { data: settings } = await supabase
+          .from('user_settings')
+          .select('google_calendar_connected')
+          .eq('user_id', user.id)
+          .single();
+
+        if (settings?.google_calendar_connected) {
+          const meetingDateTime = new Date(`${meetingData.meeting_date}T${meetingData.meeting_time}`);
+          const endDateTime = new Date(meetingDateTime.getTime() + 60 * 60 * 1000); // 1 hour meeting
+
+          const attendees = meetingData.participants?.map(p => p.email) || [];
+
+          const { data: calendarData } = await supabase.functions.invoke('google-create-event', {
+            body: {
+              title: meetingData.title,
+              description: meetingData.description || '',
+              startDateTime: meetingDateTime.toISOString(),
+              endDateTime: endDateTime.toISOString(),
+              location: meetingData.location || '',
+              attendees
+            }
+          });
+
+          if (calendarData?.eventId) {
+            await supabase
+              .from('meetings')
+              .update({ google_calendar_event_id: calendarData.eventId })
+              .eq('id', meeting.id);
+          }
+        }
+      } catch (calendarError) {
+        console.error('Error creating calendar event:', calendarError);
+        // Don't fail the meeting creation if calendar sync fails
+      }
+
       await fetchMeetings();
       return meeting;
     } catch (error) {

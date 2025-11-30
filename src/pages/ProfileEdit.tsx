@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, Camera, Upload } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -16,8 +17,10 @@ export default function ProfileEdit() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState("");
   const [jobTitle, setJobTitle] = useState("");
@@ -26,6 +29,7 @@ export default function ProfileEdit() {
   const [phone, setPhone] = useState("");
   const [website, setWebsite] = useState("");
   const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
 
   useEffect(() => {
     loadProfile();
@@ -55,6 +59,7 @@ export default function ProfileEdit() {
       setPhone(data.phone || "");
       setWebsite(data.website || "");
       setBio(data.bio || "");
+      setAvatarUrl(data.avatar_url || "");
     } catch (error: any) {
       toast({
         title: "Error loading profile",
@@ -63,6 +68,67 @@ export default function ProfileEdit() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const uploadAvatar = async (file: File) => {
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/avatar.${fileExt}`;
+
+      // Delete old avatar if exists
+      if (avatarUrl) {
+        const oldPath = avatarUrl.split('/').pop();
+        if (oldPath) {
+          await supabase.storage.from('avatars').remove([`${user.id}/${oldPath}`]);
+        }
+      }
+
+      // Upload new avatar
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      setAvatarUrl(data.publicUrl);
+
+      toast({
+        title: "Photo uploaded",
+        description: "Your profile photo has been updated",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Please select an image under 5MB",
+          variant: "destructive",
+        });
+        return;
+      }
+      uploadAvatar(file);
     }
   };
 
@@ -84,6 +150,7 @@ export default function ProfileEdit() {
           phone: phone,
           website: website,
           bio: bio,
+          avatar_url: avatarUrl,
         })
         .eq("id", user.id);
 
@@ -131,6 +198,41 @@ export default function ProfileEdit() {
         <div>
           <h1 className="text-3xl font-bold text-foreground mb-2">Edit Profile</h1>
           <p className="text-muted-foreground">Update your professional information</p>
+        </div>
+
+        {/* Profile Photo Upload */}
+        <div className="flex flex-col items-center space-y-4">
+          <Avatar className="w-32 h-32">
+            <AvatarImage src={avatarUrl} />
+            <AvatarFallback className="bg-primary text-primary-foreground text-3xl">
+              {fullName.charAt(0) || "U"}
+            </AvatarFallback>
+          </Avatar>
+          
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+          
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="border-primary text-primary"
+            >
+              {uploading ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Upload className="h-4 w-4 mr-2" />
+              )}
+              Upload Photo
+            </Button>
+          </div>
         </div>
 
         <form onSubmit={handleSave} className="space-y-6">

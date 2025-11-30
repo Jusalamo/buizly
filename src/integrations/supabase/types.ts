@@ -270,6 +270,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          avatar_url: string | null
           bio: string | null
           company: string | null
           created_at: string
@@ -283,6 +284,7 @@ export type Database = {
           website: string | null
         }
         Insert: {
+          avatar_url?: string | null
           bio?: string | null
           company?: string | null
           created_at?: string
@@ -296,6 +298,7 @@ export type Database = {
           website?: string | null
         }
         Update: {
+          avatar_url?: string | null
           bio?: string | null
           company?: string | null
           created_at?: string
@@ -314,27 +317,39 @@ export type Database = {
         Row: {
           created_at: string | null
           email_notifications: boolean | null
+          google_calendar_connected: boolean | null
+          google_refresh_token: string | null
           id: string
           onboarding_completed: boolean | null
+          profile_visibility: string | null
           push_notifications: boolean | null
+          theme: string | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
           created_at?: string | null
           email_notifications?: boolean | null
+          google_calendar_connected?: boolean | null
+          google_refresh_token?: string | null
           id?: string
           onboarding_completed?: boolean | null
+          profile_visibility?: string | null
           push_notifications?: boolean | null
+          theme?: string | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
           created_at?: string | null
           email_notifications?: boolean | null
+          google_calendar_connected?: boolean | null
+          google_refresh_token?: string | null
           id?: string
           onboarding_completed?: boolean | null
+          profile_visibility?: string | null
           push_notifications?: boolean | null
+          theme?: string | null
           updated_at?: string | null
           user_id?: string
         }
