@@ -121,11 +121,11 @@ export default function Dashboard() {
           {/* QR Code */}
           <div className="bg-card border border-border rounded-2xl p-4">
             <QRCode 
-              url={profile?.qr_code_url || `${window.location.origin}/connect/${profile?.id}`}
+              url={`${window.location.origin}/u/${profile?.id}`}
               size={140}
               className="rounded-lg"
             />
-            <p className="text-xs text-muted-foreground text-center mt-3 font-medium">Scan to connect</p>
+            <p className="text-xs text-muted-foreground text-center mt-3 font-medium">Scan to view my card</p>
           </div>
           
           {/* Profile Picture & Welcome */}

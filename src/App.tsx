@@ -16,6 +16,7 @@ import ConnectionDetail from "./pages/ConnectionDetail";
 import MeetingDetail from "./pages/MeetingDetail";
 import Connect from "./pages/Connect";
 import Contact from "./pages/Contact";
+import PublicProfile from "./pages/PublicProfile";
 import OAuth2Callback from "./pages/OAuth2Callback";
 import NotFound from "./pages/NotFound";
 
@@ -41,6 +42,7 @@ const App = () => (
             <Route path="/meeting/:id" element={<MeetingDetail />} />
             <Route path="/connect" element={<Connect />} />
             <Route path="/contact/:userId" element={<Contact />} />
+            <Route path="/u/:userId" element={<PublicProfile />} />
             <Route path="/oauth2callback" element={<OAuth2Callback />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
