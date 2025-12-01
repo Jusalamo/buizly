@@ -202,13 +202,13 @@ export default function Schedule() {
         </div>
 
         {/* Calendar */}
-        <Card className="bg-card border-border p-4">
-          <Label className="text-foreground mb-3 block">Select Date</Label>
+        <Card className="bg-card border-border p-6">
+          <Label className="text-foreground mb-4 block text-base font-semibold">Select Date</Label>
           <Calendar
             mode="single"
             selected={date}
             onSelect={setDate}
-            className="mx-auto"
+            className="w-full rounded-xl"
             disabled={(date) => date < new Date()}
           />
         </Card>

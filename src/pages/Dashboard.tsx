@@ -116,39 +116,45 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="max-w-4xl mx-auto p-6 space-y-6">
-        {/* Header with QR Code */}
-        <div className="flex items-start gap-6">
+        {/* QR Code - Centered above Welcome */}
+        <div className="flex flex-col items-center space-y-6">
+          {/* QR Code */}
+          <div className="bg-card border border-border rounded-2xl p-4">
+            <QRCode 
+              url={profile?.qr_code_url || `${window.location.origin}/connect/${profile?.id}`}
+              size={140}
+              className="rounded-lg"
+            />
+            <p className="text-xs text-muted-foreground text-center mt-3 font-medium">Scan to connect</p>
+          </div>
+          
           {/* Profile Picture & Welcome */}
-          <div className="flex items-center gap-4 flex-1">
-            <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 border-2 border-primary">
-              <span className="text-primary text-2xl font-bold">
-                {profile?.full_name?.charAt(0)?.toUpperCase() || 'U'}
-              </span>
-            </div>
-            <div>
+          <div className="flex items-center gap-4">
+            {profile?.avatar_url ? (
+              <img 
+                src={profile.avatar_url} 
+                alt={profile.full_name}
+                className="w-16 h-16 rounded-full object-cover border-2 border-primary"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center border-2 border-primary">
+                <span className="text-primary text-2xl font-bold">
+                  {profile?.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                </span>
+              </div>
+            )}
+            <div className="text-center">
               <h1 className="text-2xl font-bold text-foreground">
                 Welcome back, {profile?.full_name?.split(' ')[0] || 'User'}!
               </h1>
               <p className="text-muted-foreground text-sm">Here's your networking overview</p>
             </div>
           </div>
-          
-          {/* QR Code - Prominent on Homepage */}
-          <div className="flex-shrink-0">
-            <div className="bg-card border border-border rounded-2xl p-3">
-              <QRCode 
-                url={profile?.qr_code_url || `${window.location.origin}/connect/${profile?.id}`}
-                size={120}
-                className="rounded-lg"
-              />
-              <p className="text-xs text-muted-foreground text-center mt-2">Scan to connect</p>
-            </div>
-          </div>
         </div>
 
-        {/* Stats Grid - Compact Pill Style */}
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          <Card className="bg-card border-border px-4 py-3 flex items-center gap-3 flex-shrink-0">
+        {/* Stats Grid - Responsive Pills */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="bg-card border-border px-4 py-3 flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg">
               <Users className="h-4 w-4 text-primary" />
             </div>
@@ -158,7 +164,7 @@ export default function Dashboard() {
             </div>
           </Card>
 
-          <Card className="bg-card border-border px-4 py-3 flex items-center gap-3 flex-shrink-0">
+          <Card className="bg-card border-border px-4 py-3 flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg">
               <Calendar className="h-4 w-4 text-primary" />
             </div>
@@ -168,7 +174,7 @@ export default function Dashboard() {
             </div>
           </Card>
 
-          <Card className="bg-card border-border px-4 py-3 flex items-center gap-3 flex-shrink-0">
+          <Card className="bg-card border-border px-4 py-3 flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg">
               <TrendingUp className="h-4 w-4 text-primary" />
             </div>
