@@ -77,30 +77,37 @@ export default function ProfileEdit() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/avatar.${fileExt}`;
-
-      // Delete old avatar if exists
-      if (avatarUrl) {
-        const oldPath = avatarUrl.split('/').pop();
-        if (oldPath) {
-          await supabase.storage.from('avatars').remove([`${user.id}/${oldPath}`]);
-        }
+      if (!file.type.startsWith('image/')) {
+        throw new Error("Please select an image file");
       }
 
-      // Upload new avatar
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/avatar.${fileExt}`;
+      const filePath = `${user.id}/avatar.${fileExt}`;
+
+      // Upload new avatar with upsert to replace old one
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(fileName, file, { upsert: true });
+        .upload(filePath, file, { 
+          upsert: true,
+          contentType: file.type 
+        });
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
+      // Get public URL with cache-busting parameter
       const { data } = supabase.storage
         .from('avatars')
-        .getPublicUrl(fileName);
+        .getPublicUrl(filePath);
 
-      setAvatarUrl(data.publicUrl);
+      const newAvatarUrl = `${data.publicUrl}?t=${Date.now()}`;
+      setAvatarUrl(newAvatarUrl);
+
+      // Update profile in database immediately
+      await supabase
+        .from("profiles")
+        .update({ avatar_url: newAvatarUrl })
+        .eq("id", user.id);
 
       toast({
         title: "Photo uploaded",
@@ -202,8 +209,8 @@ export default function ProfileEdit() {
 
         {/* Profile Photo Upload */}
         <div className="flex flex-col items-center space-y-4">
-          <Avatar className="w-32 h-32">
-            <AvatarImage src={avatarUrl} />
+          <Avatar className="w-32 h-32 border-4 border-primary">
+            <AvatarImage src={avatarUrl} className="object-cover" />
             <AvatarFallback className="bg-primary text-primary-foreground text-3xl">
               {fullName.charAt(0) || "U"}
             </AvatarFallback>
@@ -223,16 +230,19 @@ export default function ProfileEdit() {
               variant="outline"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="border-primary text-primary"
+              className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
             >
               {uploading ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
                 <Upload className="h-4 w-4 mr-2" />
               )}
-              Upload Photo
+              {uploading ? "Uploading..." : "Upload Photo"}
             </Button>
           </div>
+          {avatarUrl && (
+            <p className="text-xs text-muted-foreground">Photo will update instantly across your profile</p>
+          )}
         </div>
 
         <form onSubmit={handleSave} className="space-y-6">

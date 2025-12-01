@@ -176,51 +176,68 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
       </div>
 
       {isRecording ? (
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-sm text-foreground">{formatTime(duration)}</span>
+        <div className="space-y-3">
+          {/* Waveform Animation */}
+          <div className="flex items-center justify-center gap-1 h-16">
+            {[...Array(20)].map((_, i) => (
+              <div
+                key={i}
+                className="w-1 bg-primary rounded-full animate-pulse"
+                style={{
+                  height: `${Math.random() * 100 + 20}%`,
+                  animationDelay: `${i * 0.1}s`,
+                  animationDuration: '0.8s'
+                }}
+              />
+            ))}
           </div>
-          <Button
-            onClick={stopRecording}
-            variant="outline"
-            className="border-red-500 text-red-500"
-          >
-            <Square className="h-4 w-4 mr-2" />
-            Stop
-          </Button>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+              <span className="text-sm text-foreground font-medium">{formatTime(duration)}</span>
+            </div>
+            <Button
+              onClick={stopRecording}
+              variant="outline"
+              className="border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+            >
+              <Square className="h-4 w-4 mr-2 fill-current" />
+              Stop Recording
+            </Button>
+          </div>
         </div>
       ) : audioUrl ? (
         <div className="flex items-center gap-2">
           <Button
             onClick={togglePlayback}
             variant="outline"
-            className="border-primary text-primary"
+            className="flex-1 border-primary text-primary hover:bg-primary hover:text-primary-foreground"
           >
             {isPlaying ? (
               <Pause className="h-4 w-4 mr-2" />
             ) : (
               <Play className="h-4 w-4 mr-2" />
             )}
-            {isPlaying ? "Pause" : "Play"}
+            {isPlaying ? "Pause" : "Play Recording"}
           </Button>
           <Button
             onClick={deleteRecording}
             variant="outline"
-            className="border-red-500 text-red-500"
+            size="icon"
+            className="border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
           >
             <Trash2 className="h-4 w-4" />
           </Button>
-          <span className="text-sm text-muted-foreground ml-auto">
+          <span className="text-sm text-muted-foreground">
             {formatTime(duration)}
           </span>
         </div>
       ) : (
         <Button
           onClick={startRecording}
-          className="w-full bg-primary text-primary-foreground"
+          className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
         >
-          <Mic className="h-4 w-4 mr-2" />
+          <Mic className="h-5 w-5 mr-2" />
           Start Recording
         </Button>
       )}
