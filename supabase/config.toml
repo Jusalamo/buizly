@@ -8,3 +8,6 @@ verify_jwt = false
 [functions.google-create-event]
 
 [functions.google-revoke]
+
+[functions.send-email]
+verify_jwt = true

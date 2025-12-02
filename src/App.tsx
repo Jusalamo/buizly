@@ -40,7 +40,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/connection/:id" element={<ConnectionDetail />} />
             <Route path="/meeting/:id" element={<MeetingDetail />} />
-            <Route path="/connect" element={<Connect />} />
+            <Route path="/connect/:id" element={<Connect />} />
             <Route path="/contact/:userId" element={<Contact />} />
             <Route path="/u/:userId" element={<PublicProfile />} />
             <Route path="/oauth2callback" element={<OAuth2Callback />} />
