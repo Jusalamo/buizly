@@ -7,8 +7,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Mail, Phone, Briefcase, Globe, Download, Send, Building } from "lucide-react";
+import { Mail, Phone, Briefcase, Globe, Download, Send, Building, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { connectFormSchema, type ConnectFormData } from "@/lib/validationSchemas";
 import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -19,6 +20,7 @@ export default function PublicProfile() {
   const { toast } = useToast();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [isConnectOpen, setIsConnectOpen] = useState(false);
   const [connectForm, setConnectForm] = useState({
     name: "",
@@ -26,6 +28,7 @@ export default function PublicProfile() {
     phone: "",
     message: ""
   });
+  const [formErrors, setFormErrors] = useState<Partial<Record<keyof ConnectFormData, string>>>({});
 
   useEffect(() => {
     loadProfile();
@@ -72,29 +75,42 @@ END:VCARD`;
   };
 
   const handleConnect = async () => {
-    if (!profile || !connectForm.name || !connectForm.email) {
-      toast({
-        title: "Missing information",
-        description: "Please provide your name and email",
-        variant: "destructive"
+    if (!profile) return;
+
+    // Validate form data
+    const validation = connectFormSchema.safeParse(connectForm);
+    if (!validation.success) {
+      const errors: Partial<Record<keyof ConnectFormData, string>> = {};
+      validation.error.errors.forEach(err => {
+        if (err.path[0]) {
+          errors[err.path[0] as keyof ConnectFormData] = err.message;
+        }
       });
+      setFormErrors(errors);
       return;
     }
 
+    setFormErrors({});
+    setSubmitting(true);
+
     try {
-      // Send notification to profile owner
-      await supabase.from("notifications").insert({
-        user_id: profile.id,
-        type: "new_connection",
-        title: "New Connection Request",
-        message: `${connectForm.name} wants to connect with you`,
-        data: {
-          name: connectForm.name,
-          email: connectForm.email,
-          phone: connectForm.phone,
-          message: connectForm.message
+      // Use the secure edge function to create notification
+      const { error } = await supabase.functions.invoke('create-notification', {
+        body: {
+          user_id: profile.id,
+          type: "new_connection",
+          title: "New Connection Request",
+          message: `${connectForm.name} wants to connect with you`,
+          data: {
+            name: connectForm.name,
+            email: connectForm.email,
+            phone: connectForm.phone || null,
+            message: connectForm.message || null
+          }
         }
       });
+
+      if (error) throw error;
 
       toast({
         title: "Connection sent!",
@@ -109,6 +125,8 @@ END:VCARD`;
         description: error.message,
         variant: "destructive"
       });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -243,9 +261,13 @@ END:VCARD`;
                     id="name"
                     value={connectForm.name}
                     onChange={(e) => setConnectForm(prev => ({ ...prev, name: e.target.value }))}
-                    className="bg-background border-border text-foreground"
+                    className={`bg-background border-border text-foreground ${formErrors.name ? 'border-destructive' : ''}`}
                     placeholder="John Doe"
+                    maxLength={100}
                   />
+                  {formErrors.name && (
+                    <p className="text-destructive text-sm mt-1">{formErrors.name}</p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="email" className="text-foreground">Your Email *</Label>
@@ -254,9 +276,13 @@ END:VCARD`;
                     type="email"
                     value={connectForm.email}
                     onChange={(e) => setConnectForm(prev => ({ ...prev, email: e.target.value }))}
-                    className="bg-background border-border text-foreground"
+                    className={`bg-background border-border text-foreground ${formErrors.email ? 'border-destructive' : ''}`}
                     placeholder="john@example.com"
+                    maxLength={255}
                   />
+                  {formErrors.email && (
+                    <p className="text-destructive text-sm mt-1">{formErrors.email}</p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="phone" className="text-foreground">Your Phone (Optional)</Label>
@@ -265,9 +291,13 @@ END:VCARD`;
                     type="tel"
                     value={connectForm.phone}
                     onChange={(e) => setConnectForm(prev => ({ ...prev, phone: e.target.value }))}
-                    className="bg-background border-border text-foreground"
+                    className={`bg-background border-border text-foreground ${formErrors.phone ? 'border-destructive' : ''}`}
                     placeholder="+1 (555) 000-0000"
+                    maxLength={20}
                   />
+                  {formErrors.phone && (
+                    <p className="text-destructive text-sm mt-1">{formErrors.phone}</p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="message" className="text-foreground">Message (Optional)</Label>
@@ -275,15 +305,23 @@ END:VCARD`;
                     id="message"
                     value={connectForm.message}
                     onChange={(e) => setConnectForm(prev => ({ ...prev, message: e.target.value }))}
-                    className="bg-background border-border text-foreground"
+                    className={`bg-background border-border text-foreground ${formErrors.message ? 'border-destructive' : ''}`}
                     placeholder="I'd love to connect..."
                     rows={3}
+                    maxLength={500}
                   />
+                  {formErrors.message && (
+                    <p className="text-destructive text-sm mt-1">{formErrors.message}</p>
+                  )}
                 </div>
                 <Button 
                   onClick={handleConnect} 
                   className="w-full bg-primary text-primary-foreground"
+                  disabled={submitting}
                 >
+                  {submitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : null}
                   Send Connection Request
                 </Button>
               </div>

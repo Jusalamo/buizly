@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { loginSchema, signupSchema } from "@/lib/validationSchemas";
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -13,11 +14,46 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const validateForm = () => {
+    setErrors({});
+    
+    if (isLogin) {
+      const result = loginSchema.safeParse({ email, password });
+      if (!result.success) {
+        const newErrors: Record<string, string> = {};
+        result.error.errors.forEach(err => {
+          if (err.path[0]) {
+            newErrors[err.path[0] as string] = err.message;
+          }
+        });
+        setErrors(newErrors);
+        return false;
+      }
+    } else {
+      const result = signupSchema.safeParse({ fullName, email, password });
+      if (!result.success) {
+        const newErrors: Record<string, string> = {};
+        result.error.errors.forEach(err => {
+          if (err.path[0]) {
+            newErrors[err.path[0] as string] = err.message;
+          }
+        });
+        setErrors(newErrors);
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!validateForm()) return;
+    
     setLoading(true);
 
     try {
@@ -74,10 +110,13 @@ export default function Auth() {
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  required={!isLogin}
-                  className="bg-secondary border-border text-foreground"
+                  className={`bg-secondary border-border text-foreground ${errors.fullName ? 'border-destructive' : ''}`}
                   placeholder="John Doe"
+                  maxLength={100}
                 />
+                {errors.fullName && (
+                  <p className="text-destructive text-sm">{errors.fullName}</p>
+                )}
               </div>
             )}
 
@@ -88,10 +127,12 @@ export default function Auth() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
-                className="bg-secondary border-border text-foreground"
+                className={`bg-secondary border-border text-foreground ${errors.email ? 'border-destructive' : ''}`}
                 placeholder="you@example.com"
               />
+              {errors.email && (
+                <p className="text-destructive text-sm">{errors.email}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -101,10 +142,17 @@ export default function Auth() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
-                className="bg-secondary border-border text-foreground"
+                className={`bg-secondary border-border text-foreground ${errors.password ? 'border-destructive' : ''}`}
                 placeholder="••••••••"
               />
+              {errors.password && (
+                <p className="text-destructive text-sm">{errors.password}</p>
+              )}
+              {!isLogin && (
+                <p className="text-muted-foreground text-xs">
+                  Min 8 characters, 1 uppercase, 1 number
+                </p>
+              )}
             </div>
 
             <Button
@@ -122,7 +170,10 @@ export default function Auth() {
 
           <div className="mt-6 text-center">
             <button
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setErrors({});
+              }}
               className="text-primary hover:underline text-sm"
             >
               {isLogin ? "Need an account? Sign up" : "Already have an account? Sign in"}

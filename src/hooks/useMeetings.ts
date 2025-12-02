@@ -48,6 +48,13 @@ export function useMeetings() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
+      // Get organizer profile
+      const { data: organizerProfile } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', user.id)
+        .single();
+
       const { data: meeting, error: meetingError } = await supabase
         .from('meetings')
         .insert({
@@ -81,6 +88,30 @@ export function useMeetings() {
           .insert(participantsToInsert);
 
         if (participantsError) throw participantsError;
+
+        // Send email invitations to all participants
+        for (const participant of meetingData.participants) {
+          try {
+            await supabase.functions.invoke('send-meeting-invitation', {
+              body: {
+                meetingId: meeting.id,
+                participantEmail: participant.email,
+                participantName: participant.name,
+                meetingTitle: meetingData.title,
+                meetingDate: meetingData.meeting_date,
+                meetingTime: meetingData.meeting_time,
+                meetingLocation: meetingData.location,
+                meetingDescription: meetingData.description,
+                organizerName: organizerProfile?.full_name || 'A Buizly user',
+                organizerEmail: organizerProfile?.email || user.email,
+              }
+            });
+            console.log(`Meeting invitation sent to ${participant.email}`);
+          } catch (emailError) {
+            console.error(`Failed to send invitation to ${participant.email}:`, emailError);
+            // Don't fail the meeting creation if email fails
+          }
+        }
       }
 
       // Check if Google Calendar is connected and create event
@@ -93,7 +124,7 @@ export function useMeetings() {
 
         if (settings?.google_calendar_connected) {
           const meetingDateTime = new Date(`${meetingData.meeting_date}T${meetingData.meeting_time}`);
-          const endDateTime = new Date(meetingDateTime.getTime() + 60 * 60 * 1000); // 1 hour meeting
+          const endDateTime = new Date(meetingDateTime.getTime() + 60 * 60 * 1000);
 
           const attendees = meetingData.participants?.map(p => p.email) || [];
 
@@ -117,7 +148,6 @@ export function useMeetings() {
         }
       } catch (calendarError) {
         console.error('Error creating calendar event:', calendarError);
-        // Don't fail the meeting creation if calendar sync fails
       }
 
       await fetchMeetings();
