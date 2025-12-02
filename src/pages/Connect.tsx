@@ -52,11 +52,37 @@ export default function Connect() {
   };
 
   const handleDownloadApp = () => {
-    // In a real app, this would link to app stores
-    toast({
-      title: "Coming Soon",
-      description: "The Buizly app will be available on iOS and Android soon!",
-    });
+    if (!profile) return;
+
+    // Try to open app via deep link
+    const deepLink = `buizly://user/${profile.id}`;
+    const appOpened = window.open(deepLink, "_self");
+
+    // Set a timeout to redirect to app store if deep link doesn't work
+    const timeout = setTimeout(() => {
+      const userAgent = navigator.userAgent || navigator.vendor;
+      
+      // Detect iOS
+      if (/iPad|iPhone|iPod/.test(userAgent)) {
+        window.location.href = "https://apps.apple.com/app/buizly"; // Replace with actual App Store URL
+      }
+      // Detect Android
+      else if (/android/i.test(userAgent)) {
+        window.location.href = "https://play.google.com/store/apps/details?id=com.buizly.app"; // Replace with actual Play Store URL
+      }
+      // Desktop fallback
+      else {
+        toast({
+          title: "Download on Mobile",
+          description: "Visit this page on your phone to download the Buizly app!",
+        });
+      }
+    }, 1200);
+
+    // Clear timeout if deep link worked
+    window.addEventListener("blur", () => {
+      clearTimeout(timeout);
+    }, { once: true });
   };
 
   const handleContinueWithoutApp = () => {

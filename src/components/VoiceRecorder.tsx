@@ -101,12 +101,23 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
+      // Get signed URL for private bucket access
+      const { data: signedUrlData, error: urlError } = await supabase.storage
         .from("meeting-media")
-        .getPublicUrl(fileName);
+        .createSignedUrl(fileName, 31536000); // 1 year expiry
+
+      if (urlError) throw urlError;
+
+      const audioUrl = signedUrlData.signedUrl;
+
+      // Save to meeting_notes table
+      await supabase.from("meeting_notes").insert({
+        meeting_id: meetingId,
+        audio_note_url: audioUrl,
+      });
 
       if (onAudioSaved) {
-        onAudioSaved(publicUrl);
+        onAudioSaved(audioUrl);
       }
 
       toast({
