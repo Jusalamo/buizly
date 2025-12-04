@@ -368,7 +368,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      can_view_profile: { Args: { profile_id: string }; Returns: boolean }
     }
     Enums: {
       meeting_status:
