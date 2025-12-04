@@ -35,6 +35,11 @@ export default function PublicProfile() {
   }, [userId]);
 
   const loadProfile = async () => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from("profiles")

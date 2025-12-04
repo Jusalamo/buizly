@@ -14,6 +14,7 @@ import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import ConnectionDetail from "./pages/ConnectionDetail";
 import MeetingDetail from "./pages/MeetingDetail";
+import MeetingResponse from "./pages/MeetingResponse";
 import Connect from "./pages/Connect";
 import Contact from "./pages/Contact";
 import PublicProfile from "./pages/PublicProfile";
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/connection/:id" element={<ConnectionDetail />} />
             <Route path="/meeting/:id" element={<MeetingDetail />} />
+            <Route path="/meeting-response/:id" element={<MeetingResponse />} />
             <Route path="/connect/:id" element={<Connect />} />
             <Route path="/contact/:userId" element={<Contact />} />
             <Route path="/u/:userId" element={<PublicProfile />} />
