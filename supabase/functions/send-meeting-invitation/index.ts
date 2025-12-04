@@ -168,12 +168,26 @@ const handler = async (req: Request): Promise<Response> => {
     
     if (!emailResponse.ok) {
       console.error("[send-meeting-invitation] Email error:", emailData);
+      
+      // Handle Resend free tier limitation gracefully
+      if (emailData.statusCode === 403 && emailData.name === "validation_error") {
+        console.warn("[send-meeting-invitation] Resend domain not verified - email skipped");
+        return new Response(JSON.stringify({ 
+          success: true, 
+          emailSent: false, 
+          warning: "Email notification skipped - domain verification required at resend.com/domains" 
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+      
       throw new Error(emailData.message || "Failed to send email");
     }
 
     console.log("[send-meeting-invitation] Email sent:", emailData);
 
-    return new Response(JSON.stringify({ success: true, data: emailData }), {
+    return new Response(JSON.stringify({ success: true, emailSent: true, data: emailData }), {
       status: 200,
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
