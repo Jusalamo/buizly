@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, Trash2, Upload } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Mic, Square, Play, Pause, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { Progress } from "@/components/ui/progress";
 
 interface VoiceRecorderProps {
   meetingId: string;
@@ -12,35 +13,72 @@ interface VoiceRecorderProps {
 
 export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: VoiceRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(existingAudioUrl || null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [playbackProgress, setPlaybackProgress] = useState(0);
+  const [totalDuration, setTotalDuration] = useState(0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const { toast } = useToast();
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
+      cleanup();
     };
   }, []);
 
+  const cleanup = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  };
+
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
+      // Reset state
+      setAudioBlob(null);
+      setAudioUrl(null);
+      setPlaybackProgress(0);
+      setTotalDuration(0);
       audioChunksRef.current = [];
+
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100
+        } 
+      });
+      
+      streamRef.current = stream;
+
+      // Try to use a more compatible MIME type
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/mp4';
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -49,24 +87,34 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        const url = URL.createObjectURL(audioBlob);
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        
+        setAudioBlob(blob);
         setAudioUrl(url);
+        setTotalDuration(duration);
+
+        // Stop all tracks
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
 
         // Upload to storage
-        await uploadAudio(audioBlob);
-
-        stream.getTracks().forEach(track => track.stop());
+        await uploadAudio(blob);
       };
 
-      mediaRecorder.start();
+      // Request data every second for smoother recording
+      mediaRecorder.start(1000);
       setIsRecording(true);
       setDuration(0);
 
+      // Start timer
       timerRef.current = window.setInterval(() => {
         setDuration(prev => prev + 1);
       }, 1000);
     } catch (error: any) {
+      console.error("Recording error:", error);
       toast({
         title: "Microphone access denied",
         description: "Please allow microphone access to record voice notes",
@@ -79,8 +127,10 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      
       if (timerRef.current) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
       }
     }
   };
@@ -91,12 +141,14 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const fileName = `${user.id}/${meetingId}/voice-note-${Date.now()}.webm`;
+      const fileExtension = blob.type.includes('webm') ? 'webm' : 'm4a';
+      const fileName = `${user.id}/${meetingId}/voice-note-${Date.now()}.${fileExtension}`;
 
       const { error: uploadError } = await supabase.storage
         .from("meeting-media")
         .upload(fileName, blob, {
-          contentType: "audio/webm"
+          contentType: blob.type,
+          upsert: true
         });
 
       if (uploadError) throw uploadError;
@@ -108,16 +160,16 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
 
       if (urlError) throw urlError;
 
-      const audioUrl = signedUrlData.signedUrl;
+      const savedAudioUrl = signedUrlData.signedUrl;
 
       // Save to meeting_notes table
       await supabase.from("meeting_notes").insert({
         meeting_id: meetingId,
-        audio_note_url: audioUrl,
+        audio_note_url: savedAudioUrl,
       });
 
       if (onAudioSaved) {
-        onAudioSaved(audioUrl);
+        onAudioSaved(savedAudioUrl);
       }
 
       toast({
@@ -125,6 +177,7 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
         description: "Your recording has been saved successfully"
       });
     } catch (error: any) {
+      console.error("Upload error:", error);
       toast({
         title: "Upload failed",
         description: error.message,
@@ -135,30 +188,65 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
     }
   };
 
-  const togglePlayback = () => {
+  const togglePlayback = useCallback(() => {
     if (!audioUrl) return;
 
     if (!audioRef.current) {
       audioRef.current = new Audio(audioUrl);
-      audioRef.current.onended = () => setIsPlaying(false);
+      
+      audioRef.current.onloadedmetadata = () => {
+        if (audioRef.current && isFinite(audioRef.current.duration)) {
+          setTotalDuration(Math.floor(audioRef.current.duration));
+        }
+      };
+
+      audioRef.current.ontimeupdate = () => {
+        if (audioRef.current && isFinite(audioRef.current.duration)) {
+          const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+          setPlaybackProgress(progress);
+        }
+      };
+
+      audioRef.current.onended = () => {
+        setIsPlaying(false);
+        setPlaybackProgress(0);
+      };
+
+      audioRef.current.onerror = (e) => {
+        console.error("Audio playback error:", e);
+        toast({
+          title: "Playback error",
+          description: "Unable to play the recording",
+          variant: "destructive"
+        });
+        setIsPlaying(false);
+      };
     }
 
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioRef.current.play();
+      audioRef.current.play().catch(err => {
+        console.error("Play error:", err);
+        toast({
+          title: "Playback error",
+          description: "Unable to play the recording",
+          variant: "destructive"
+        });
+      });
       setIsPlaying(true);
     }
-  };
+  }, [audioUrl, isPlaying, toast]);
 
-  const deleteRecording = async () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
+  const deleteRecording = () => {
+    cleanup();
+    setAudioBlob(null);
     setAudioUrl(null);
     setIsPlaying(false);
     setDuration(0);
+    setPlaybackProgress(0);
+    setTotalDuration(0);
     audioRef.current = null;
 
     if (onAudioSaved) {
@@ -178,7 +266,7 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
   };
 
   return (
-    <div className="bg-card-surface rounded-xl p-4 space-y-4">
+    <div className="bg-card border border-border rounded-xl p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-medium text-foreground">Voice Note</h4>
         {uploading && (
@@ -187,30 +275,32 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
       </div>
 
       {isRecording ? (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {/* Waveform Animation */}
-          <div className="flex items-center justify-center gap-1 h-16">
+          <div className="flex items-center justify-center gap-1 h-16 bg-secondary rounded-lg p-2">
             {[...Array(20)].map((_, i) => (
               <div
                 key={i}
-                className="w-1 bg-primary rounded-full animate-pulse"
+                className="w-1 bg-primary rounded-full transition-all duration-150"
                 style={{
-                  height: `${Math.random() * 100 + 20}%`,
-                  animationDelay: `${i * 0.1}s`,
-                  animationDuration: '0.8s'
+                  height: `${20 + Math.sin(Date.now() / 200 + i) * 30 + Math.random() * 20}%`,
+                  minHeight: '8px'
                 }}
               />
             ))}
           </div>
+          
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-sm text-foreground font-medium">{formatTime(duration)}</span>
+              <span className="text-sm text-foreground font-mono font-medium">
+                {formatTime(duration)}
+              </span>
             </div>
             <Button
               onClick={stopRecording}
               variant="outline"
-              className="border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+              className="border-red-500 text-red-500 hover:bg-red-500/10"
             >
               <Square className="h-4 w-4 mr-2 fill-current" />
               Stop Recording
@@ -218,30 +308,43 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
           </div>
         </div>
       ) : audioUrl ? (
-        <div className="flex items-center gap-2">
-          <Button
-            onClick={togglePlayback}
-            variant="outline"
-            className="flex-1 border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-          >
-            {isPlaying ? (
-              <Pause className="h-4 w-4 mr-2" />
-            ) : (
-              <Play className="h-4 w-4 mr-2" />
-            )}
-            {isPlaying ? "Pause" : "Play Recording"}
-          </Button>
-          <Button
-            onClick={deleteRecording}
-            variant="outline"
-            size="icon"
-            className="border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            {formatTime(duration)}
-          </span>
+        <div className="space-y-3">
+          {/* Playback Progress */}
+          <div className="space-y-2">
+            <Progress value={playbackProgress} className="h-2" />
+            <div className="flex justify-between text-xs text-muted-foreground font-mono">
+              <span>{formatTime(Math.floor((playbackProgress / 100) * totalDuration))}</span>
+              <span>{formatTime(totalDuration || duration)}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={togglePlayback}
+              variant="outline"
+              className="flex-1 border-primary text-primary hover:bg-primary/10"
+            >
+              {isPlaying ? (
+                <>
+                  <Pause className="h-4 w-4 mr-2" />
+                  Pause
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  Play Recording
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={deleteRecording}
+              variant="outline"
+              size="icon"
+              className="border-red-500 text-red-500 hover:bg-red-500/10"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       ) : (
         <Button

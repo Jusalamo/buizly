@@ -50,102 +50,150 @@ const handler = async (req: Request): Promise<Response> => {
 
     const appUrl = 'https://preview--buizly-digital-business-card.lovable.app';
     
-    // Create accept/decline links
-    const acceptLink = `${appUrl}/meeting/${invitation.meetingId}?action=accept`;
-    const declineLink = `${appUrl}/meeting/${invitation.meetingId}?action=decline`;
-
     // Send email using Resend via fetch
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     if (!resendApiKey) {
       throw new Error("RESEND_API_KEY not configured");
     }
 
+    // Include participant email in the response links for tracking
+    const acceptLink = `${appUrl}/meeting-response/${invitation.meetingId}?action=accept&email=${encodeURIComponent(invitation.participantEmail)}`;
+    const declineLink = `${appUrl}/meeting-response/${invitation.meetingId}?action=decline&email=${encodeURIComponent(invitation.participantEmail)}`;
+
+    // Email HTML optimized for deliverability and client compatibility
     const emailHtml = `
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background-color: #0a0a0a; color: #ffffff; }
-          .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
-          .card { background: #1a1a1a; border-radius: 16px; padding: 32px; border: 1px solid #333; }
-          .header { text-align: center; margin-bottom: 24px; }
-          .logo { font-size: 28px; font-weight: bold; color: #00FF4D; }
-          h1 { font-size: 24px; margin: 0 0 8px 0; color: #ffffff; }
-          .subtitle { color: #888; font-size: 14px; }
-          .meeting-details { background: #222; border-radius: 12px; padding: 20px; margin: 24px 0; }
-          .detail-row { display: flex; margin-bottom: 12px; align-items: flex-start; }
-          .detail-row:last-child { margin-bottom: 0; }
-          .detail-label { color: #888; font-size: 12px; text-transform: uppercase; min-width: 80px; }
-          .detail-value { color: #fff; font-size: 14px; }
-          .organizer { background: #222; border-radius: 12px; padding: 16px; margin: 24px 0; display: flex; align-items: center; gap: 12px; }
-          .organizer-avatar { width: 40px; height: 40px; border-radius: 50%; background: #00FF4D; display: flex; align-items: center; justify-content: center; color: #000; font-weight: bold; }
-          .organizer-info { flex: 1; }
-          .organizer-name { font-weight: 600; color: #fff; }
-          .organizer-email { font-size: 12px; color: #888; }
-          .buttons { display: flex; gap: 12px; margin-top: 24px; }
-          .btn { flex: 1; padding: 14px 24px; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 600; font-size: 14px; display: inline-block; }
-          .btn-accept { background: #00FF4D; color: #000; }
-          .btn-decline { background: transparent; color: #ff4d4d; border: 1px solid #ff4d4d; }
-          .footer { text-align: center; margin-top: 32px; color: #666; font-size: 12px; }
-        </style>
+        <meta name="x-apple-disable-message-reformatting">
+        <title>Meeting Invitation from ${invitation.organizerName}</title>
       </head>
-      <body>
-        <div class="container">
-          <div class="card">
-            <div class="header">
-              <div class="logo">Buizly</div>
-            </div>
-            
-            <h1>You're Invited!</h1>
-            <p class="subtitle">${invitation.organizerName} has invited you to a meeting</p>
-            
-            <div class="meeting-details">
-              <div class="detail-row">
-                <span class="detail-label">Title</span>
-                <span class="detail-value">${invitation.meetingTitle}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Date</span>
-                <span class="detail-value">${new Date(invitation.meetingDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Time</span>
-                <span class="detail-value">${invitation.meetingTime}</span>
-              </div>
-              ${invitation.meetingLocation ? `
-              <div class="detail-row">
-                <span class="detail-label">Location</span>
-                <span class="detail-value">${invitation.meetingLocation}</span>
-              </div>
-              ` : ''}
-              ${invitation.meetingDescription ? `
-              <div class="detail-row">
-                <span class="detail-label">Details</span>
-                <span class="detail-value">${invitation.meetingDescription}</span>
-              </div>
-              ` : ''}
-            </div>
-            
-            <div class="organizer">
-              <div class="organizer-avatar">${invitation.organizerName.charAt(0).toUpperCase()}</div>
-              <div class="organizer-info">
-                <div class="organizer-name">${invitation.organizerName}</div>
-                <div class="organizer-email">${invitation.organizerEmail}</div>
-              </div>
-            </div>
-            
-            <div class="buttons">
-              <a href="${acceptLink}" class="btn btn-accept">Accept</a>
-              <a href="${declineLink}" class="btn btn-decline">Decline</a>
-            </div>
-            
-            <div class="footer">
-              <p>You can also respond by opening the Buizly app</p>
-            </div>
-          </div>
-        </div>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f4;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f4f4f4;">
+          <tr>
+            <td align="center" style="padding: 40px 20px;">
+              <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                <!-- Header -->
+                <tr>
+                  <td align="center" style="padding: 32px 32px 16px 32px;">
+                    <h1 style="margin: 0; font-size: 28px; font-weight: bold; color: #00CC3D;">Buizly</h1>
+                  </td>
+                </tr>
+                
+                <!-- Title -->
+                <tr>
+                  <td style="padding: 0 32px;">
+                    <h2 style="margin: 0 0 8px 0; font-size: 24px; color: #1a1a1a;">You're Invited!</h2>
+                    <p style="margin: 0; font-size: 14px; color: #666666;">${invitation.organizerName} has invited you to a meeting</p>
+                  </td>
+                </tr>
+                
+                <!-- Meeting Details -->
+                <tr>
+                  <td style="padding: 24px 32px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f9f9f9; border-radius: 12px;">
+                      <tr>
+                        <td style="padding: 20px;">
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                              <td style="padding: 8px 0;">
+                                <span style="display: inline-block; width: 80px; font-size: 12px; color: #888888; text-transform: uppercase;">Title</span>
+                                <span style="font-size: 14px; color: #1a1a1a;">${invitation.meetingTitle}</span>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td style="padding: 8px 0;">
+                                <span style="display: inline-block; width: 80px; font-size: 12px; color: #888888; text-transform: uppercase;">Date</span>
+                                <span style="font-size: 14px; color: #1a1a1a;">${new Date(invitation.meetingDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td style="padding: 8px 0;">
+                                <span style="display: inline-block; width: 80px; font-size: 12px; color: #888888; text-transform: uppercase;">Time</span>
+                                <span style="font-size: 14px; color: #1a1a1a;">${invitation.meetingTime}</span>
+                              </td>
+                            </tr>
+                            ${invitation.meetingLocation ? `
+                            <tr>
+                              <td style="padding: 8px 0;">
+                                <span style="display: inline-block; width: 80px; font-size: 12px; color: #888888; text-transform: uppercase;">Location</span>
+                                <span style="font-size: 14px; color: #1a1a1a;">${invitation.meetingLocation}</span>
+                              </td>
+                            </tr>
+                            ` : ''}
+                            ${invitation.meetingDescription ? `
+                            <tr>
+                              <td style="padding: 8px 0;">
+                                <span style="display: inline-block; width: 80px; font-size: 12px; color: #888888; text-transform: uppercase;">Details</span>
+                                <span style="font-size: 14px; color: #1a1a1a;">${invitation.meetingDescription}</span>
+                              </td>
+                            </tr>
+                            ` : ''}
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                
+                <!-- Organizer -->
+                <tr>
+                  <td style="padding: 0 32px 24px 32px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f9f9f9; border-radius: 12px;">
+                      <tr>
+                        <td style="padding: 16px;">
+                          <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                              <td style="vertical-align: middle; padding-right: 12px;">
+                                <div style="width: 40px; height: 40px; border-radius: 50%; background-color: #00CC3D; color: #000000; font-weight: bold; font-size: 16px; text-align: center; line-height: 40px;">
+                                  ${invitation.organizerName.charAt(0).toUpperCase()}
+                                </div>
+                              </td>
+                              <td style="vertical-align: middle;">
+                                <div style="font-weight: 600; color: #1a1a1a; font-size: 14px;">${invitation.organizerName}</div>
+                                <div style="font-size: 12px; color: #888888;">${invitation.organizerEmail}</div>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                
+                <!-- Buttons -->
+                <tr>
+                  <td style="padding: 0 32px 24px 32px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td align="center" style="padding-right: 8px;" width="50%">
+                          <a href="${acceptLink}" target="_blank" style="display: block; padding: 14px 24px; background-color: #00CC3D; color: #000000; text-decoration: none; font-weight: 600; font-size: 14px; border-radius: 8px; text-align: center;">Accept</a>
+                        </td>
+                        <td align="center" style="padding-left: 8px;" width="50%">
+                          <a href="${declineLink}" target="_blank" style="display: block; padding: 14px 24px; background-color: #ffffff; color: #dc2626; text-decoration: none; font-weight: 600; font-size: 14px; border-radius: 8px; text-align: center; border: 1px solid #dc2626;">Decline</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                
+                <!-- Footer -->
+                <tr>
+                  <td align="center" style="padding: 24px 32px; border-top: 1px solid #eeeeee;">
+                    <p style="margin: 0; font-size: 12px; color: #888888;">
+                      You can also respond by opening the Buizly app
+                    </p>
+                    <p style="margin: 8px 0 0 0; font-size: 11px; color: #aaaaaa;">
+                      © ${new Date().getFullYear()} Buizly. All rights reserved.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
       </body>
       </html>
     `;
@@ -161,6 +209,9 @@ const handler = async (req: Request): Promise<Response> => {
         to: [invitation.participantEmail],
         subject: `Meeting Invitation: ${invitation.meetingTitle}`,
         html: emailHtml,
+        headers: {
+          "X-Entity-Ref-ID": invitation.meetingId,
+        },
       }),
     });
 
@@ -193,8 +244,9 @@ const handler = async (req: Request): Promise<Response> => {
     });
   } catch (error: any) {
     console.error("[send-meeting-invitation] Error:", error.message);
+    // Return generic error message to avoid exposing internal details
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: "Unable to send invitation. Please try again later." }),
       { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }

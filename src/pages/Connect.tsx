@@ -182,11 +182,19 @@ END:VCARD`;
       {/* Header */}
       <div className="bg-gradient-to-b from-primary/20 to-background pt-12 pb-20 px-6">
         <div className="max-w-md mx-auto text-center">
-          <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4 border-4 border-primary">
-            <span className="text-primary text-4xl font-bold">
-              {profile.full_name?.charAt(0)?.toUpperCase() || 'U'}
-            </span>
-          </div>
+          {profile.avatar_url ? (
+            <img 
+              src={profile.avatar_url} 
+              alt={profile.full_name}
+              className="w-24 h-24 rounded-full object-cover mx-auto mb-4 border-4 border-primary"
+            />
+          ) : (
+            <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4 border-4 border-primary">
+              <span className="text-primary text-4xl font-bold">
+                {profile.full_name?.charAt(0)?.toUpperCase() || 'U'}
+              </span>
+            </div>
+          )}
           <h1 className="text-3xl font-bold text-foreground">{profile.full_name}</h1>
           {profile.job_title && (
             <p className="text-primary font-medium mt-1">{profile.job_title}</p>
@@ -207,27 +215,34 @@ END:VCARD`;
               </div>
               <h2 className="text-xl font-bold text-foreground mb-2">Connect with {profile.full_name?.split(' ')[0]}</h2>
               <p className="text-muted-foreground text-sm mb-6">
-                Download the Buizly app to save this contact and start networking smarter!
+                Get the Buizly app to save this contact and start networking smarter!
               </p>
 
               <div className="space-y-3">
+                {/* Primary CTA - Get the App */}
                 <Button
                   onClick={handleDownloadApp}
                   className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
                 >
                   <Download className="h-5 w-5 mr-2" />
-                  Download Buizly App
+                  Get Buizly App
                 </Button>
 
+                {/* Secondary - Continue without app */}
                 <Button
                   onClick={handleContinueWithoutApp}
                   variant="outline"
                   className="w-full border-border text-foreground hover:bg-secondary py-6"
                 >
                   <ExternalLink className="h-5 w-5 mr-2" />
-                  Continue Without App
+                  Save Contact Without App
                 </Button>
               </div>
+
+              {/* App Store badges hint */}
+              <p className="text-xs text-muted-foreground mt-4">
+                Available on iOS App Store & Google Play
+              </p>
             </Card>
 
             {/* Contact Preview */}
@@ -251,9 +266,23 @@ END:VCARD`;
               {profile.website && (
                 <div className="flex items-center gap-3">
                   <Globe className="h-5 w-5 text-primary" />
-                  <a href={profile.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                  <a href={profile.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">
                     {profile.website}
                   </a>
+                </div>
+              )}
+
+              {profile.company && (
+                <div className="flex items-center gap-3">
+                  <Building className="h-5 w-5 text-primary" />
+                  <span className="text-foreground">{profile.company}</span>
+                </div>
+              )}
+
+              {profile.job_title && (
+                <div className="flex items-center gap-3">
+                  <Briefcase className="h-5 w-5 text-primary" />
+                  <span className="text-foreground">{profile.job_title}</span>
                 </div>
               )}
             </Card>
