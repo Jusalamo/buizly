@@ -195,6 +195,25 @@ export function useMeetings() {
 
   const deleteMeeting = useCallback(async (meetingId: string) => {
     try {
+      // First, clear parent_meeting_id references for child meetings
+      await supabase
+        .from('meetings')
+        .update({ parent_meeting_id: null })
+        .eq('parent_meeting_id', meetingId);
+
+      // Delete meeting participants
+      await supabase
+        .from('meeting_participants')
+        .delete()
+        .eq('meeting_id', meetingId);
+
+      // Delete meeting notes
+      await supabase
+        .from('meeting_notes')
+        .delete()
+        .eq('meeting_id', meetingId);
+
+      // Now delete the meeting
       const { error } = await supabase
         .from('meetings')
         .delete()

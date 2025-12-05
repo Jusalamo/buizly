@@ -55,6 +55,42 @@ export default function Network() {
     if (!deleteId) return;
     
     try {
+      // First, clear parent_meeting_id references for meetings linked to this connection
+      const { data: meetings } = await supabase
+        .from("meetings")
+        .select("id")
+        .eq("connection_id", deleteId);
+
+      if (meetings && meetings.length > 0) {
+        const meetingIds = meetings.map(m => m.id);
+        
+        // Clear parent_meeting_id for any meetings that reference these meetings
+        await supabase
+          .from("meetings")
+          .update({ parent_meeting_id: null })
+          .in("parent_meeting_id", meetingIds);
+        
+        // Delete meeting participants
+        for (const meetingId of meetingIds) {
+          await supabase
+            .from("meeting_participants")
+            .delete()
+            .eq("meeting_id", meetingId);
+          
+          await supabase
+            .from("meeting_notes")
+            .delete()
+            .eq("meeting_id", meetingId);
+        }
+        
+        // Delete meetings for this connection
+        await supabase
+          .from("meetings")
+          .delete()
+          .eq("connection_id", deleteId);
+      }
+
+      // Now delete the connection
       const { error } = await supabase
         .from("connections")
         .delete()
@@ -65,12 +101,12 @@ export default function Network() {
       setConnections(prev => prev.filter(c => c.id !== deleteId));
       toast({
         title: "Connection removed",
-        description: "The connection has been deleted",
+        description: "The connection and related meetings have been deleted",
       });
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message,
+        description: "Failed to delete connection. Please try again.",
         variant: "destructive",
       });
     } finally {
