@@ -17,10 +17,60 @@ export function useMeetings() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Clean up past meetings automatically
+  const cleanupPastMeetings = useCallback(async (userId: string) => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStr = today.toISOString().split('T')[0];
+
+      // Get past meetings
+      const { data: pastMeetings } = await supabase
+        .from('meetings')
+        .select('id')
+        .eq('user_id', userId)
+        .lt('meeting_date', todayStr);
+
+      if (pastMeetings && pastMeetings.length > 0) {
+        for (const meeting of pastMeetings) {
+          // Clear parent references
+          await supabase
+            .from('meetings')
+            .update({ parent_meeting_id: null })
+            .eq('parent_meeting_id', meeting.id);
+
+          // Delete participants
+          await supabase
+            .from('meeting_participants')
+            .delete()
+            .eq('meeting_id', meeting.id);
+
+          // Delete notes
+          await supabase
+            .from('meeting_notes')
+            .delete()
+            .eq('meeting_id', meeting.id);
+
+          // Delete the meeting
+          await supabase
+            .from('meetings')
+            .delete()
+            .eq('id', meeting.id);
+        }
+        console.log(`Cleaned up ${pastMeetings.length} past meetings`);
+      }
+    } catch (error) {
+      console.error('Error cleaning up past meetings:', error);
+    }
+  }, []);
+
   const fetchMeetings = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      // Clean up past meetings first
+      await cleanupPastMeetings(user.id);
 
       const { data, error } = await supabase
         .from('meetings')
@@ -41,7 +91,7 @@ export function useMeetings() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cleanupPastMeetings]);
 
   const createMeeting = useCallback(async (meetingData: CreateMeetingData) => {
     try {

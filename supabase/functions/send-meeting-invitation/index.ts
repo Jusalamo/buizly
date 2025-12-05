@@ -48,7 +48,8 @@ const handler = async (req: Request): Promise<Response> => {
     const invitation: MeetingInvitationRequest = await req.json();
     console.log(`[send-meeting-invitation] Sending to ${invitation.participantEmail}`);
 
-    const appUrl = 'https://preview--buizly-digital-business-card.lovable.app';
+    // Use the production URL for better email deliverability
+    const appUrl = Deno.env.get("APP_URL") || 'https://preview--buizly-digital-business-card.lovable.app';
     
     // Send email using Resend via fetch
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
@@ -163,19 +164,51 @@ const handler = async (req: Request): Promise<Response> => {
                   </td>
                 </tr>
                 
-                <!-- Buttons -->
+                <!-- Buttons - Using table-based buttons for maximum email client compatibility -->
                 <tr>
                   <td style="padding: 0 32px 24px 32px;">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                       <tr>
                         <td align="center" style="padding-right: 8px;" width="50%">
-                          <a href="${acceptLink}" target="_blank" style="display: block; padding: 14px 24px; background-color: #00CC3D; color: #000000; text-decoration: none; font-weight: 600; font-size: 14px; border-radius: 8px; text-align: center;">Accept</a>
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${acceptLink}" style="height:44px;v-text-anchor:middle;width:120px;" arcsize="18%" strokecolor="#00CC3D" fillcolor="#00CC3D">
+                            <w:anchorlock/>
+                            <center style="color:#000000;font-family:sans-serif;font-size:14px;font-weight:bold;">Accept</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                              <td style="border-radius: 8px; background-color: #00CC3D;">
+                                <a href="${acceptLink}" style="display: inline-block; padding: 14px 32px; color: #000000; text-decoration: none; font-weight: 600; font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">Accept</a>
+                              </td>
+                            </tr>
+                          </table>
+                          <!--<![endif]-->
                         </td>
                         <td align="center" style="padding-left: 8px;" width="50%">
-                          <a href="${declineLink}" target="_blank" style="display: block; padding: 14px 24px; background-color: #ffffff; color: #dc2626; text-decoration: none; font-weight: 600; font-size: 14px; border-radius: 8px; text-align: center; border: 1px solid #dc2626;">Decline</a>
+                          <!--[if mso]>
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${declineLink}" style="height:44px;v-text-anchor:middle;width:120px;" arcsize="18%" strokecolor="#dc2626" fillcolor="#ffffff">
+                            <w:anchorlock/>
+                            <center style="color:#dc2626;font-family:sans-serif;font-size:14px;font-weight:bold;">Decline</center>
+                          </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                              <td style="border-radius: 8px; border: 2px solid #dc2626;">
+                                <a href="${declineLink}" style="display: inline-block; padding: 12px 30px; color: #dc2626; text-decoration: none; font-weight: 600; font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">Decline</a>
+                              </td>
+                            </tr>
+                          </table>
+                          <!--<![endif]-->
                         </td>
                       </tr>
                     </table>
+                    <p style="margin: 16px 0 0 0; text-align: center; font-size: 12px; color: #666666;">
+                      If buttons don't work, copy this link: <br/>
+                      <a href="${acceptLink}" style="color: #00CC3D; word-break: break-all;">${acceptLink}</a>
+                    </p>
                   </td>
                 </tr>
                 
