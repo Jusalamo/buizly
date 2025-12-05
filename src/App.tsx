@@ -12,6 +12,8 @@ import Profile from "./pages/Profile";
 import ProfileEdit from "./pages/ProfileEdit";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import ConnectionDetail from "./pages/ConnectionDetail";
 import MeetingDetail from "./pages/MeetingDetail";
 import MeetingResponse from "./pages/MeetingResponse";
@@ -39,6 +41,8 @@ const App = () => (
             <Route path="/profile/edit" element={<ProfileEdit />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/connection/:id" element={<ConnectionDetail />} />
             <Route path="/meeting/:id" element={<MeetingDetail />} />
             <Route path="/meeting-response/:id" element={<MeetingResponse />} />
