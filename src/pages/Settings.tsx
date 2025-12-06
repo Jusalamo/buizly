@@ -9,11 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   User, Bell, Database, Settings as SettingsIcon, LogOut, 
-  ChevronRight, Calendar, Moon, Sun, Eye, Users, RefreshCw
+  ChevronRight, Calendar, Moon, Sun, Eye, RefreshCw, BarChart3, Linkedin
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useTheme } from "@/contexts/ThemeContext";
+import { LinkedInImport } from "@/components/LinkedInImport";
+import { CalendarSync } from "@/components/CalendarSync";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -148,6 +150,25 @@ export default function Settings() {
           <p className="text-muted-foreground text-sm">Manage your account and preferences</p>
         </div>
 
+        {/* Analytics */}
+        <Card
+          className="bg-card border-border p-4 cursor-pointer hover:bg-card/80 transition-colors"
+          onClick={() => navigate("/analytics")}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <BarChart3 className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <span className="text-foreground font-medium">Analytics</span>
+                <p className="text-sm text-muted-foreground">Track who viewed your card</p>
+              </div>
+            </div>
+            <ChevronRight className="h-5 w-5 text-muted-foreground" />
+          </div>
+        </Card>
+
         {/* Profile Management */}
         <Card
           className="bg-card border-border p-4 cursor-pointer hover:bg-card/80 transition-colors"
@@ -203,16 +224,16 @@ export default function Settings() {
               <Calendar className="h-5 w-5 text-primary" />
             </div>
             <div className="flex-1">
-              <span className="text-foreground font-medium">Google Calendar</span>
+              <span className="text-foreground font-medium">Calendar Integrations</span>
               <p className="text-xs text-muted-foreground mt-1">
                 {settings?.google_calendar_connected 
-                  ? "Connected - meetings will sync automatically" 
-                  : "Connect to sync meetings to your calendar"}
+                  ? "Google Calendar connected - meetings will sync automatically" 
+                  : "Connect your calendar to sync meetings"}
               </p>
             </div>
           </div>
           
-          <div className="pl-14">
+          <div className="pl-14 space-y-3">
             {settings?.google_calendar_connected ? (
               <Button
                 variant="destructive"
@@ -223,7 +244,7 @@ export default function Settings() {
                 {disconnectingGoogle ? (
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                 ) : null}
-                Disconnect
+                Disconnect Google
               </Button>
             ) : (
               <Button
@@ -235,6 +256,29 @@ export default function Settings() {
                 Connect Google Calendar
               </Button>
             )}
+            <CalendarSync 
+              googleConnected={settings?.google_calendar_connected}
+              onSync={refetch}
+            />
+          </div>
+        </Card>
+
+        {/* LinkedIn Integration */}
+        <Card className="bg-card border-border p-4">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="p-2 bg-[#0077B5]/10 rounded-lg">
+              <Linkedin className="h-5 w-5 text-[#0077B5]" />
+            </div>
+            <div className="flex-1">
+              <span className="text-foreground font-medium">LinkedIn</span>
+              <p className="text-xs text-muted-foreground mt-1">
+                Link your LinkedIn profile to your business card
+              </p>
+            </div>
+          </div>
+          
+          <div className="pl-14">
+            <LinkedInImport />
           </div>
         </Card>
 

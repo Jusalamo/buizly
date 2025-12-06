@@ -268,6 +268,44 @@ export type Database = {
           },
         ]
       }
+      profile_views: {
+        Row: {
+          created_at: string
+          id: string
+          profile_id: string
+          viewer_device: string | null
+          viewer_ip_hash: string | null
+          viewer_location: string | null
+          viewer_referrer: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          profile_id: string
+          viewer_device?: string | null
+          viewer_ip_hash?: string | null
+          viewer_location?: string | null
+          viewer_referrer?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          profile_id?: string
+          viewer_device?: string | null
+          viewer_ip_hash?: string | null
+          viewer_location?: string | null
+          viewer_referrer?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_views_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -278,6 +316,7 @@ export type Database = {
           full_name: string
           id: string
           job_title: string | null
+          linkedin_url: string | null
           phone: string | null
           qr_code_url: string | null
           updated_at: string
@@ -292,6 +331,7 @@ export type Database = {
           full_name: string
           id: string
           job_title?: string | null
+          linkedin_url?: string | null
           phone?: string | null
           qr_code_url?: string | null
           updated_at?: string
@@ -306,6 +346,7 @@ export type Database = {
           full_name?: string
           id?: string
           job_title?: string | null
+          linkedin_url?: string | null
           phone?: string | null
           qr_code_url?: string | null
           updated_at?: string
@@ -319,8 +360,11 @@ export type Database = {
           email_notifications: boolean | null
           google_calendar_connected: boolean | null
           google_refresh_token: string | null
+          ical_url: string | null
           id: string
           onboarding_completed: boolean | null
+          outlook_calendar_connected: boolean | null
+          outlook_refresh_token: string | null
           profile_visibility: string | null
           push_notifications: boolean | null
           theme: string | null
@@ -332,8 +376,11 @@ export type Database = {
           email_notifications?: boolean | null
           google_calendar_connected?: boolean | null
           google_refresh_token?: string | null
+          ical_url?: string | null
           id?: string
           onboarding_completed?: boolean | null
+          outlook_calendar_connected?: boolean | null
+          outlook_refresh_token?: string | null
           profile_visibility?: string | null
           push_notifications?: boolean | null
           theme?: string | null
@@ -345,8 +392,11 @@ export type Database = {
           email_notifications?: boolean | null
           google_calendar_connected?: boolean | null
           google_refresh_token?: string | null
+          ical_url?: string | null
           id?: string
           onboarding_completed?: boolean | null
+          outlook_calendar_connected?: boolean | null
+          outlook_refresh_token?: string | null
           profile_visibility?: string | null
           push_notifications?: boolean | null
           theme?: string | null

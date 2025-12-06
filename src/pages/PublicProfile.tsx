@@ -32,6 +32,7 @@ export default function PublicProfile() {
 
   useEffect(() => {
     loadProfile();
+    trackView();
   }, [userId]);
 
   const loadProfile = async () => {
@@ -53,6 +54,21 @@ export default function PublicProfile() {
       console.error("Error loading profile:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const trackView = async () => {
+    if (!userId) return;
+    
+    try {
+      await supabase.functions.invoke('track-profile-view', {
+        body: {
+          profileId: userId,
+          referrer: document.referrer || null,
+        }
+      });
+    } catch (error) {
+      console.error("Error tracking view:", error);
     }
   };
 

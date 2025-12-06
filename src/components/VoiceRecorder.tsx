@@ -20,12 +20,14 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
   const [duration, setDuration] = useState(0);
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
+  const [waveformHeights, setWaveformHeights] = useState<number[]>(Array(20).fill(20));
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const waveformRef = useRef<number | null>(null);
 
   const { toast } = useToast();
 
@@ -35,6 +37,28 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
       cleanup();
     };
   }, []);
+
+  // Animate waveform during recording
+  useEffect(() => {
+    if (isRecording) {
+      const animateWaveform = () => {
+        setWaveformHeights(prev => 
+          prev.map(() => 20 + Math.random() * 60)
+        );
+        waveformRef.current = requestAnimationFrame(animateWaveform);
+      };
+      waveformRef.current = requestAnimationFrame(animateWaveform);
+    } else {
+      if (waveformRef.current) {
+        cancelAnimationFrame(waveformRef.current);
+      }
+    }
+    return () => {
+      if (waveformRef.current) {
+        cancelAnimationFrame(waveformRef.current);
+      }
+    };
+  }, [isRecording]);
 
   const cleanup = () => {
     if (timerRef.current) {
@@ -278,12 +302,12 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
         <div className="space-y-4">
           {/* Waveform Animation */}
           <div className="flex items-center justify-center gap-1 h-16 bg-secondary rounded-lg p-2">
-            {[...Array(20)].map((_, i) => (
+            {waveformHeights.map((height, i) => (
               <div
                 key={i}
-                className="w-1 bg-primary rounded-full transition-all duration-150"
+                className="w-1 bg-primary rounded-full transition-all duration-75"
                 style={{
-                  height: `${20 + Math.sin(Date.now() / 200 + i) * 30 + Math.random() * 20}%`,
+                  height: `${height}%`,
                   minHeight: '8px'
                 }}
               />
