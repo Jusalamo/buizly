@@ -72,10 +72,32 @@ export default {
             height: "0",
           },
         },
+        "neon-pulse": {
+          "0%, 100%": {
+            textShadow: "0 0 5px hsl(142, 100%, 50%), 0 0 10px hsl(142, 100%, 50%), 0 0 20px hsl(142, 100%, 50%)",
+            opacity: "1",
+          },
+          "50%": {
+            textShadow: "0 0 10px hsl(142, 100%, 50%), 0 0 20px hsl(142, 100%, 50%), 0 0 40px hsl(142, 100%, 50%), 0 0 60px hsl(142, 100%, 50%)",
+            opacity: "0.9",
+          },
+        },
+        "fade-in": {
+          "0%": {
+            opacity: "0",
+            transform: "translateY(10px)",
+          },
+          "100%": {
+            opacity: "1",
+            transform: "translateY(0)",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "neon-pulse": "neon-pulse 1.5s ease-in-out infinite",
+        "fade-in": "fade-in 0.3s ease-out",
       },
     },
   },

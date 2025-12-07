@@ -7,18 +7,24 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Mail, Phone, Briefcase, Globe, Download, Send, Building, Loader2 } from "lucide-react";
+import { Mail, Phone, Briefcase, Globe, Download, Send, Building, Loader2, Lock, Smartphone } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { connectFormSchema, type ConnectFormData } from "@/lib/validationSchemas";
 import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
+interface ProfileState {
+  profile: Profile | null;
+  isPrivate: boolean;
+  basicInfo: { name: string; avatar_url: string | null } | null;
+}
+
 export default function PublicProfile() {
   const { userId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [state, setState] = useState<ProfileState>({ profile: null, isPrivate: false, basicInfo: null });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [isConnectOpen, setIsConnectOpen] = useState(false);
@@ -42,16 +48,39 @@ export default function PublicProfile() {
     }
 
     try {
-      const { data, error } = await supabase
+      // First, try to get the full profile (this will respect RLS)
+      const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", userId)
         .single();
 
-      if (error) throw error;
-      setProfile(data);
+      if (profileError) {
+        // Profile not accessible via RLS - check if it exists but is private
+        // Fetch basic info without RLS restrictions using a public function approach
+        const { data: basicData, error: basicError } = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url")
+          .eq("id", userId)
+          .single();
+
+        if (basicError || !basicData) {
+          // Profile truly doesn't exist
+          setState({ profile: null, isPrivate: false, basicInfo: null });
+        } else {
+          // Profile exists but is private
+          setState({ 
+            profile: null, 
+            isPrivate: true, 
+            basicInfo: { name: basicData.full_name, avatar_url: basicData.avatar_url } 
+          });
+        }
+      } else {
+        setState({ profile: profileData, isPrivate: false, basicInfo: null });
+      }
     } catch (error) {
       console.error("Error loading profile:", error);
+      setState({ profile: null, isPrivate: false, basicInfo: null });
     } finally {
       setLoading(false);
     }
@@ -73,32 +102,46 @@ export default function PublicProfile() {
   };
 
   const downloadVCard = () => {
-    if (!profile) return;
+    if (!state.profile) return;
 
     const vcard = `BEGIN:VCARD
 VERSION:3.0
-FN:${profile.full_name}
-EMAIL:${profile.email}
-TEL:${profile.phone || ''}
-TITLE:${profile.job_title || ''}
-ORG:${profile.company || ''}
-URL:${profile.website || ''}
-NOTE:${profile.bio || ''}
+FN:${state.profile.full_name}
+EMAIL:${state.profile.email}
+TEL:${state.profile.phone || ''}
+TITLE:${state.profile.job_title || ''}
+ORG:${state.profile.company || ''}
+URL:${state.profile.website || ''}
+NOTE:${state.profile.bio || ''}
 END:VCARD`;
 
     const blob = new Blob([vcard], { type: 'text/vcard' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${profile.full_name.replace(/\s+/g, '_')}.vcf`;
+    a.download = `${state.profile.full_name.replace(/\s+/g, '_')}.vcf`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
 
-  const handleConnect = async () => {
-    if (!profile) return;
+  const handleDownloadApp = () => {
+    const userAgent = navigator.userAgent || navigator.vendor;
+    
+    if (/iPad|iPhone|iPod/.test(userAgent)) {
+      window.location.href = "https://apps.apple.com/app/buizly";
+    } else if (/android/i.test(userAgent)) {
+      window.location.href = "https://play.google.com/store/apps/details?id=com.buizly.app";
+    } else {
+      toast({
+        title: "Download on Mobile",
+        description: "Visit this page on your phone to download the Buizly app!",
+      });
+    }
+  };
 
-    // Validate form data
+  const handleConnect = async () => {
+    if (!state.profile) return;
+
     const validation = connectFormSchema.safeParse(connectForm);
     if (!validation.success) {
       const errors: Partial<Record<keyof ConnectFormData, string>> = {};
@@ -115,10 +158,9 @@ END:VCARD`;
     setSubmitting(true);
 
     try {
-      // Use the secure edge function to create notification
       const { error } = await supabase.functions.invoke('create-notification', {
         body: {
-          user_id: profile.id,
+          user_id: state.profile.id,
           type: "new_connection",
           title: "New Connection Request",
           message: `${connectForm.name} wants to connect with you`,
@@ -135,7 +177,7 @@ END:VCARD`;
 
       toast({
         title: "Connection sent!",
-        description: `${profile.full_name} will receive your details`
+        description: `${state.profile.full_name} will receive your details`
       });
 
       setIsConnectOpen(false);
@@ -159,7 +201,42 @@ END:VCARD`;
     );
   }
 
-  if (!profile) {
+  // Profile is private - show limited info
+  if (state.isPrivate && state.basicInfo) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="bg-card border-border p-8 max-w-lg w-full text-center space-y-6">
+          {state.basicInfo.avatar_url ? (
+            <img 
+              src={state.basicInfo.avatar_url} 
+              alt={state.basicInfo.name}
+              className="w-24 h-24 rounded-full object-cover mx-auto border-4 border-primary"
+            />
+          ) : (
+            <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center mx-auto border-4 border-primary">
+              <span className="text-primary text-3xl font-bold">
+                {state.basicInfo.name.charAt(0).toUpperCase()}
+              </span>
+            </div>
+          )}
+          
+          <h1 className="text-2xl font-bold text-foreground">{state.basicInfo.name}</h1>
+          
+          <div className="flex items-center justify-center gap-2 text-muted-foreground">
+            <Lock className="h-5 w-5" />
+            <p>This account is private and info can't be viewed</p>
+          </div>
+
+          <Button onClick={() => navigate("/auth")} className="bg-primary text-primary-foreground">
+            Sign in to Connect
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Profile not found
+  if (!state.profile) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <Card className="bg-card border-border p-8 text-center max-w-md">
@@ -175,104 +252,109 @@ END:VCARD`;
     );
   }
 
+  // Full profile view
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="bg-card border-border p-8 max-w-lg w-full space-y-6">
-        {/* Profile Header */}
-        <div className="flex flex-col items-center text-center space-y-4">
-          {profile.avatar_url ? (
+    <div className="min-h-screen bg-background">
+      {/* Header with gradient */}
+      <div className="bg-gradient-to-b from-primary/20 to-background pt-12 pb-20 px-4">
+        <div className="max-w-lg mx-auto text-center">
+          {state.profile.avatar_url ? (
             <img 
-              src={profile.avatar_url} 
-              alt={profile.full_name}
-              className="w-24 h-24 rounded-full object-cover border-4 border-primary"
+              src={state.profile.avatar_url} 
+              alt={state.profile.full_name}
+              className="w-28 h-28 rounded-full object-cover mx-auto mb-4 border-4 border-primary"
             />
           ) : (
-            <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center border-4 border-primary">
-              <span className="text-primary text-3xl font-bold">
-                {profile.full_name.charAt(0).toUpperCase()}
+            <div className="w-28 h-28 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4 border-4 border-primary">
+              <span className="text-primary text-4xl font-bold">
+                {state.profile.full_name.charAt(0).toUpperCase()}
               </span>
             </div>
           )}
           
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">{profile.full_name}</h1>
-            {profile.job_title && (
-              <p className="text-primary font-medium mt-1">{profile.job_title}</p>
-            )}
-            {profile.company && (
-              <p className="text-muted-foreground text-sm">{profile.company}</p>
-            )}
-          </div>
+          <h1 className="text-3xl font-bold text-foreground">{state.profile.full_name}</h1>
+          {state.profile.job_title && (
+            <p className="text-primary font-medium mt-1">{state.profile.job_title}</p>
+          )}
+          {state.profile.company && (
+            <p className="text-muted-foreground">{state.profile.company}</p>
+          )}
         </div>
+      </div>
 
+      <div className="max-w-lg mx-auto px-4 -mt-8 space-y-6 pb-12">
         {/* Bio */}
-        {profile.bio && (
-          <p className="text-foreground text-center leading-relaxed px-4">{profile.bio}</p>
+        {state.profile.bio && (
+          <Card className="bg-card border-border p-6">
+            <p className="text-foreground leading-relaxed">{state.profile.bio}</p>
+          </Card>
         )}
 
         {/* Contact Info */}
-        <div className="space-y-3">
-          {profile.email && (
+        <Card className="bg-card border-border p-6 space-y-4">
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Contact Info</h3>
+          
+          {state.profile.email && (
             <a
-              href={`mailto:${profile.email}`}
+              href={`mailto:${state.profile.email}`}
               className="flex items-center gap-3 p-3 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors"
             >
               <Mail className="h-5 w-5 text-primary" />
-              <span className="text-foreground">{profile.email}</span>
+              <span className="text-foreground">{state.profile.email}</span>
             </a>
           )}
 
-          {profile.phone && (
+          {state.profile.phone && (
             <a
-              href={`tel:${profile.phone}`}
+              href={`tel:${state.profile.phone}`}
               className="flex items-center gap-3 p-3 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors"
             >
               <Phone className="h-5 w-5 text-primary" />
-              <span className="text-foreground">{profile.phone}</span>
+              <span className="text-foreground">{state.profile.phone}</span>
             </a>
           )}
 
-          {profile.website && (
+          {state.profile.website && (
             <a
-              href={profile.website}
+              href={state.profile.website}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-3 p-3 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors"
             >
               <Globe className="h-5 w-5 text-primary" />
-              <span className="text-foreground truncate">{profile.website}</span>
+              <span className="text-foreground truncate">{state.profile.website}</span>
             </a>
           )}
 
-          {profile.company && (
+          {state.profile.company && (
             <div className="flex items-center gap-3 p-3 bg-secondary rounded-lg">
               <Building className="h-5 w-5 text-primary" />
-              <span className="text-foreground">{profile.company}</span>
+              <span className="text-foreground">{state.profile.company}</span>
             </div>
           )}
 
-          {profile.job_title && (
+          {state.profile.job_title && (
             <div className="flex items-center gap-3 p-3 bg-secondary rounded-lg">
               <Briefcase className="h-5 w-5 text-primary" />
-              <span className="text-foreground">{profile.job_title}</span>
+              <span className="text-foreground">{state.profile.job_title}</span>
             </div>
           )}
-        </div>
+        </Card>
 
         {/* Action Buttons */}
-        <div className="space-y-3 pt-4">
+        <Card className="bg-card border-border p-6 space-y-3">
           <Dialog open={isConnectOpen} onOpenChange={setIsConnectOpen}>
             <DialogTrigger asChild>
-              <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
-                <Send className="h-4 w-4 mr-2" />
-                Connect with {profile.full_name.split(' ')[0]}
+              <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6">
+                <Smartphone className="h-5 w-5 mr-2" />
+                Connect on Buizly
               </Button>
             </DialogTrigger>
             <DialogContent className="bg-card border-border">
               <DialogHeader>
                 <DialogTitle className="text-foreground">Send Your Details</DialogTitle>
                 <DialogDescription className="text-muted-foreground">
-                  {profile.full_name} will receive your contact information
+                  {state.profile.full_name} will receive your contact information
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 mt-4">
@@ -352,27 +434,27 @@ END:VCARD`;
           <Button
             onClick={downloadVCard}
             variant="outline"
-            className="w-full border-primary text-primary hover:bg-primary/10"
+            className="w-full border-primary text-primary hover:bg-primary/10 py-6"
           >
-            <Download className="h-4 w-4 mr-2" />
-            Save Contact
+            <Download className="h-5 w-5 mr-2" />
+            Save Contact to Phone
           </Button>
-        </div>
+        </Card>
 
         {/* App Download CTA */}
-        <div className="pt-4 border-t border-border text-center">
+        <div className="text-center pt-4">
           <p className="text-sm text-muted-foreground mb-2">
             Want your own digital business card?
           </p>
           <Button
-            onClick={() => navigate("/auth")}
+            onClick={handleDownloadApp}
             variant="ghost"
             className="text-primary hover:bg-primary/10"
           >
             Get Buizly
           </Button>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
