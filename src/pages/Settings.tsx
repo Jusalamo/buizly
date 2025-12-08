@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   User, Bell, Database, Settings as SettingsIcon, LogOut, 
-  ChevronRight, Calendar, Moon, Sun, Eye, RefreshCw, BarChart3, Linkedin
+  ChevronRight, Calendar, Moon, Sun, Eye, RefreshCw, BarChart3, Linkedin, Crown
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserSettings } from "@/hooks/useUserSettings";
@@ -163,6 +163,25 @@ export default function Settings() {
               <div>
                 <span className="text-foreground font-medium">Analytics</span>
                 <p className="text-sm text-muted-foreground">Track who viewed your card</p>
+              </div>
+            </div>
+            <ChevronRight className="h-5 w-5 text-muted-foreground" />
+          </div>
+        </Card>
+
+        {/* Subscription */}
+        <Card
+          className="bg-card border-border p-4 cursor-pointer hover:bg-card/80 transition-colors"
+          onClick={() => navigate("/subscription")}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Crown className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <span className="text-foreground font-medium">Subscription</span>
+                <p className="text-sm text-muted-foreground">Manage your plan and billing</p>
               </div>
             </div>
             <ChevronRight className="h-5 w-5 text-muted-foreground" />
