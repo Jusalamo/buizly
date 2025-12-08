@@ -48,35 +48,41 @@ export default function PublicProfile() {
     }
 
     try {
-      // First, try to get the full profile (this will respect RLS)
-      const { data: profileData, error: profileError } = await supabase
+      // First fetch basic info (always accessible)
+      const { data: basicData } = await supabase
         .from("profiles")
-        .select("*")
+        .select("id, full_name, avatar_url")
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
-      if (profileError) {
-        // Profile not accessible via RLS - check if it exists but is private
-        // Fetch basic info without RLS restrictions using a public function approach
-        const { data: basicData, error: basicError } = await supabase
+      if (!basicData) {
+        // Profile truly doesn't exist
+        setState({ profile: null, isPrivate: false, basicInfo: null });
+        setLoading(false);
+        return;
+      }
+
+      // Check if user can view full profile using can_view_profile function
+      const { data: canView } = await supabase.rpc("can_view_profile", {
+        profile_id: userId
+      });
+
+      if (canView) {
+        // User can view full profile
+        const { data: profileData } = await supabase
           .from("profiles")
-          .select("id, full_name, avatar_url")
+          .select("*")
           .eq("id", userId)
           .single();
 
-        if (basicError || !basicData) {
-          // Profile truly doesn't exist
-          setState({ profile: null, isPrivate: false, basicInfo: null });
-        } else {
-          // Profile exists but is private
-          setState({ 
-            profile: null, 
-            isPrivate: true, 
-            basicInfo: { name: basicData.full_name, avatar_url: basicData.avatar_url } 
-          });
-        }
-      } else {
         setState({ profile: profileData, isPrivate: false, basicInfo: null });
+      } else {
+        // Profile exists but is private - show limited info
+        setState({ 
+          profile: null, 
+          isPrivate: true, 
+          basicInfo: { name: basicData.full_name, avatar_url: basicData.avatar_url } 
+        });
       }
     } catch (error) {
       console.error("Error loading profile:", error);

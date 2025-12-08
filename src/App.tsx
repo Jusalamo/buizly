@@ -24,6 +24,7 @@ import Contact from "./pages/Contact";
 import PublicProfile from "./pages/PublicProfile";
 import OAuth2Callback from "./pages/OAuth2Callback";
 import Analytics from "./pages/Analytics";
+import Subscription from "./pages/Subscription";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -49,6 +50,7 @@ function AppRoutes() {
       <Route path="/u/:userId" element={<PublicProfile />} />
       <Route path="/oauth2callback" element={<OAuth2Callback />} />
       <Route path="/analytics" element={<Analytics />} />
+      <Route path="/subscription" element={<Subscription />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
