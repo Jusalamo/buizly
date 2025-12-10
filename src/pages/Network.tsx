@@ -5,12 +5,15 @@ import { Layout } from "@/components/Layout";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Search, Filter, Trash2, MoreVertical, Calendar, MapPin, Tag } from "lucide-react";
+import { Search, Trash2, MoreVertical, Calendar, Tag } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useSubscription } from "@/hooks/useSubscription";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { ConnectionLimitBadge } from "@/components/ConnectionLimitBadge";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import type { Database } from "@/integrations/supabase/types";
 
 type Connection = Database["public"]["Tables"]["connections"]["Row"];
@@ -19,12 +22,15 @@ type DateFilter = "all" | "week" | "month" | "year";
 
 export default function Network() {
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { canAddConnection, getCurrentPlan } = useSubscription();
 
   useEffect(() => {
     loadConnections();
@@ -48,7 +54,17 @@ export default function Network() {
       setConnections(data || []);
     } catch (error) {
       console.error("Error loading connections:", error);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleAddConnection = () => {
+    if (!canAddConnection()) {
+      setShowUpgrade(true);
+      return;
+    }
+    navigate("/capture");
   };
 
   const handleDelete = async () => {
@@ -165,12 +181,27 @@ export default function Network() {
     return filtered;
   }, [connections, searchQuery, dateFilter, companyFilter]);
 
+  const isFree = getCurrentPlan() === "free";
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <LoadingSpinner size="md" />
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="max-w-4xl mx-auto p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground mb-2">Network</h1>
-          <p className="text-muted-foreground text-sm">Manage your professional connections</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground mb-2">Network</h1>
+            <p className="text-muted-foreground text-sm">Manage your professional connections</p>
+          </div>
+          {isFree && <ConnectionLimitBadge />}
         </div>
 
         {/* Search Bar */}
@@ -252,7 +283,7 @@ export default function Network() {
                   : "No connections yet. Start by capturing a new meeting!"}
               </p>
               {!searchQuery && dateFilter === "all" && companyFilter === "all" && (
-                <Button onClick={() => navigate("/capture")} className="mt-4 bg-primary text-primary-foreground">
+                <Button onClick={handleAddConnection} className="mt-4 bg-primary text-primary-foreground">
                   Add Connection
                 </Button>
               )}
@@ -330,6 +361,12 @@ export default function Network() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <UpgradePrompt 
+        open={showUpgrade} 
+        onOpenChange={setShowUpgrade}
+        feature="connections"
+      />
     </Layout>
   );
 }

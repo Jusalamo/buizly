@@ -3,10 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart3, Eye, MapPin, Smartphone, Calendar, TrendingUp, Globe } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 interface ProfileView {
   id: string;
@@ -65,13 +66,36 @@ export default function Analytics() {
     }
   };
 
-  const getViewsByDay = () => {
-    const viewsByDay: Record<string, number> = {};
-    views.forEach(view => {
-      const day = new Date(view.created_at).toLocaleDateString();
-      viewsByDay[day] = (viewsByDay[day] || 0) + 1;
-    });
-    return Object.entries(viewsByDay).slice(0, 7).reverse();
+  const getChartData = () => {
+    const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : timeRange === "90d" ? 90 : 365;
+    const data: { date: string; views: number; fullDate: string }[] = [];
+    
+    // Create array of dates for the range
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      const displayDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      
+      const viewsCount = views.filter(v => {
+        const viewDate = new Date(v.created_at).toISOString().split('T')[0];
+        return viewDate === dateStr;
+      }).length;
+      
+      data.push({ 
+        date: displayDate, 
+        views: viewsCount,
+        fullDate: dateStr
+      });
+    }
+    
+    // For longer ranges, sample the data to avoid overcrowding
+    if (days > 30) {
+      const sampleRate = Math.ceil(days / 30);
+      return data.filter((_, index) => index % sampleRate === 0 || index === data.length - 1);
+    }
+    
+    return data;
   };
 
   const getTopLocations = () => {
@@ -107,15 +131,22 @@ export default function Analytics() {
       .slice(0, 5);
   };
 
+  const getAvgPerDay = () => {
+    const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : timeRange === "90d" ? 90 : 365;
+    return views.length > 0 ? (views.length / days).toFixed(1) : "0";
+  };
+
   if (loading) {
     return (
       <Layout>
         <div className="flex items-center justify-center min-h-[50vh]">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary"></div>
+          <LoadingSpinner size="md" />
         </div>
       </Layout>
     );
   }
+
+  const chartData = getChartData();
 
   return (
     <Layout>
@@ -192,16 +223,14 @@ export default function Analytics() {
                 <Calendar className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">
-                  {views.length > 0 ? Math.round(views.length / 30) : 0}
-                </p>
+                <p className="text-2xl font-bold text-foreground">{getAvgPerDay()}</p>
                 <p className="text-xs text-muted-foreground">Avg/Day</p>
               </div>
             </div>
           </Card>
         </div>
 
-        {/* Views Chart */}
+        {/* Views Chart - Real Graph */}
         <Card className="bg-card border-border p-6">
           <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
             <BarChart3 className="h-5 w-5 text-primary" />
@@ -210,16 +239,50 @@ export default function Analytics() {
           {views.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">No views yet. Share your QR code to start tracking!</p>
           ) : (
-            <div className="flex items-end gap-2 h-40">
-              {getViewsByDay().map(([day, count]) => (
-                <div key={day} className="flex-1 flex flex-col items-center gap-2">
-                  <div 
-                    className="w-full bg-primary rounded-t-lg transition-all"
-                    style={{ height: `${Math.max(10, (count / Math.max(...getViewsByDay().map(d => d[1]))) * 100)}%` }}
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorViews" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
                   />
-                  <span className="text-xs text-muted-foreground truncate max-w-full">{day.split('/').slice(0, 2).join('/')}</span>
-                </div>
-              ))}
+                  <YAxis 
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    allowDecimals={false}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      color: 'hsl(var(--foreground))'
+                    }}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    formatter={(value: number) => [`${value} views`, 'Views']}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="views" 
+                    stroke="hsl(var(--primary))" 
+                    fillOpacity={1} 
+                    fill="url(#colorViews)"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           )}
         </Card>
