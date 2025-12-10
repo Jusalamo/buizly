@@ -8,13 +8,19 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mic, MicOff, Play, Pause, Trash2, Clock } from "lucide-react";
+import { useSubscription } from "@/hooks/useSubscription";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { ConnectionLimitBadge } from "@/components/ConnectionLimitBadge";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { Mic, MicOff, Play, Pause, Trash2, Clock } from "lucide-react";
 
 export default function Capture() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { canAddConnection, incrementConnectionCount, getConnectionsRemaining, getCurrentPlan } = useSubscription();
 
   // Form state
   const [name, setName] = useState("");
@@ -122,6 +128,13 @@ export default function Capture() {
 
   const handleStepOne = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check connection limit before proceeding
+    if (!canAddConnection()) {
+      setShowUpgrade(true);
+      return;
+    }
+    
     if (name && email) {
       setStep(2);
     }
@@ -129,6 +142,13 @@ export default function Capture() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Double-check connection limit
+    if (!canAddConnection()) {
+      setShowUpgrade(true);
+      return;
+    }
+    
     setLoading(true);
 
     try {
@@ -154,6 +174,9 @@ export default function Capture() {
         .single();
 
       if (connectionError) throw connectionError;
+
+      // Increment connection count for usage tracking
+      await incrementConnectionCount();
 
       // Upload voice note if exists
       if (audioBlob && connectionData) {
@@ -184,14 +207,20 @@ export default function Capture() {
     }
   };
 
+  const remaining = getConnectionsRemaining();
+  const isFree = getCurrentPlan() === "free";
+
   return (
     <Layout>
       <div className="max-w-2xl mx-auto p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground mb-2">Capture Meeting Info</h1>
-          <p className="text-muted-foreground text-sm">
-            {step === 1 ? "Enter basic details" : "Add additional information"}
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground mb-2">Capture Meeting Info</h1>
+            <p className="text-muted-foreground text-sm">
+              {step === 1 ? "Enter basic details" : "Add additional information"}
+            </p>
+          </div>
+          {isFree && <ConnectionLimitBadge />}
         </div>
 
         {/* Progress indicator */}
@@ -360,7 +389,7 @@ export default function Capture() {
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <LoadingSpinner size="sm" />
                 ) : (
                   "Save Connection"
                 )}
@@ -369,6 +398,12 @@ export default function Capture() {
           </form>
         )}
       </div>
+
+      <UpgradePrompt 
+        open={showUpgrade} 
+        onOpenChange={setShowUpgrade}
+        feature="connections"
+      />
     </Layout>
   );
 }
