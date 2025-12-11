@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Mail, Phone, Globe, Building, Briefcase, Download, Smartphone, Lock, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { connectFormSchema, type ConnectFormData } from "@/lib/validationSchemas";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -191,7 +192,7 @@ END:VCARD`;
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary" />
+        <LoadingSpinner size="md" />
       </div>
     );
   }

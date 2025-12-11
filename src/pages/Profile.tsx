@@ -4,8 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Mail, Phone, Globe, Building, Briefcase, Share2, Edit } from "lucide-react";
+import { Mail, Phone, Globe, Building, Briefcase, Share2, Edit, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -71,7 +72,7 @@ export default function Profile() {
     return (
       <Layout>
         <div className="flex items-center justify-center min-h-[50vh]">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary"></div>
+          <LoadingSpinner size="md" />
         </div>
       </Layout>
     );
@@ -90,6 +91,16 @@ export default function Profile() {
   return (
     <Layout>
       <div className="max-w-2xl mx-auto p-6 space-y-6">
+        {/* Back Button */}
+        <Button
+          variant="ghost"
+          onClick={() => navigate("/settings")}
+          className="text-foreground hover:text-primary -ml-2"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Settings
+        </Button>
+
         {/* Profile Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-foreground">My Profile</h1>
