@@ -8,6 +8,7 @@ import { ParticipantsList } from "@/components/ParticipantsList";
 import { VoiceRecorder } from "@/components/VoiceRecorder";
 import { PhotoUploader } from "@/components/PhotoUploader";
 import { MeetingForm } from "@/components/MeetingForm";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useToast } from "@/hooks/use-toast";
 import { useMeetings } from "@/hooks/useMeetings";
 import { 
@@ -115,7 +116,7 @@ export default function MeetingDetail() {
     return (
       <Layout title="Meeting">
         <div className="flex items-center justify-center min-h-[50vh]">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-primary" />
+          <LoadingSpinner size="md" />
         </div>
       </Layout>
     );

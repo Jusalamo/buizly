@@ -1,13 +1,16 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useSubscription, PLAN_FEATURES, SubscriptionPlan } from "@/hooks/useSubscription";
-import { Check, Crown, Zap, Building2, ArrowRight, Loader2 } from "lucide-react";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { Check, Crown, Zap, Building2, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 
 export default function Subscription() {
+  const navigate = useNavigate();
   const {
     subscription,
     usage,
@@ -33,7 +36,7 @@ export default function Subscription() {
     return (
       <Layout>
         <div className="flex items-center justify-center min-h-[60vh]">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <LoadingSpinner size="md" />
         </div>
       </Layout>
     );
@@ -42,6 +45,16 @@ export default function Subscription() {
   return (
     <Layout>
       <div className="p-6 pb-24 space-y-6">
+        {/* Back Button */}
+        <Button
+          variant="ghost"
+          onClick={() => navigate("/settings")}
+          className="text-foreground hover:text-primary -ml-2"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Settings
+        </Button>
+
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-3xl font-bold text-foreground">Subscription</h1>

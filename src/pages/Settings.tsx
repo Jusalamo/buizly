@@ -16,6 +16,7 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 import { useTheme } from "@/contexts/ThemeContext";
 import { LinkedInImport } from "@/components/LinkedInImport";
 import { CalendarSync } from "@/components/CalendarSync";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -236,47 +237,26 @@ export default function Settings() {
           </div>
         </Card>
 
-        {/* Google Calendar Integration */}
+        {/* Calendar Integrations */}
         <Card className="bg-card border-border p-4">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <Calendar className="h-5 w-5 text-primary" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Calendar className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <span className="text-foreground font-medium">Calendar Sync</span>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {settings?.google_calendar_connected 
+                    ? "Google Calendar connected" 
+                    : "Sync meetings with your calendar"}
+                </p>
+              </div>
             </div>
-            <div className="flex-1">
-              <span className="text-foreground font-medium">Calendar Integrations</span>
-              <p className="text-xs text-muted-foreground mt-1">
-                {settings?.google_calendar_connected 
-                  ? "Google Calendar connected - meetings will sync automatically" 
-                  : "Connect your calendar to sync meetings"}
-              </p>
-            </div>
-          </div>
-          
-          <div className="pl-14 space-y-3">
-            {settings?.google_calendar_connected ? (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={disconnectGoogleCalendar}
-                disabled={disconnectingGoogle}
-              >
-                {disconnectingGoogle ? (
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                ) : null}
-                Disconnect Google
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={connectGoogleCalendar}
-                className="border-primary text-primary"
-              >
-                Connect Google Calendar
-              </Button>
-            )}
             <CalendarSync 
               googleConnected={settings?.google_calendar_connected}
+              outlookConnected={settings?.outlook_calendar_connected}
+              icalUrl={settings?.ical_url || undefined}
               onSync={refetch}
             />
           </div>

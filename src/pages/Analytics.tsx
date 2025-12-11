@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BarChart3, Eye, MapPin, Smartphone, Calendar, TrendingUp, Globe } from "lucide-react";
+import { BarChart3, Eye, MapPin, Smartphone, Calendar, TrendingUp, Globe, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
@@ -151,6 +152,16 @@ export default function Analytics() {
   return (
     <Layout>
       <div className="max-w-4xl mx-auto p-6 space-y-6">
+        {/* Back Button */}
+        <Button
+          variant="ghost"
+          onClick={() => navigate("/settings")}
+          className="text-foreground hover:text-primary -ml-2"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Settings
+        </Button>
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>

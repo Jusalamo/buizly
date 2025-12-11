@@ -215,9 +215,9 @@ export default function Capture() {
       <div className="max-w-2xl mx-auto p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-2">Capture Meeting Info</h1>
+            <h1 className="text-2xl font-bold text-foreground mb-2">Add Connection</h1>
             <p className="text-muted-foreground text-sm">
-              {step === 1 ? "Enter basic details" : "Add additional information"}
+              {step === 1 ? "Enter contact details" : "Add notes & voice memo"}
             </p>
           </div>
           {isFree && <ConnectionLimitBadge />}

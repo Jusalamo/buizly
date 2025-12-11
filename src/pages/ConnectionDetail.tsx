@@ -5,6 +5,7 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Mail, Phone, Briefcase, Calendar, ArrowLeft } from "lucide-react";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import type { Database } from "@/integrations/supabase/types";
 
 type Connection = Database["public"]["Tables"]["connections"]["Row"];
@@ -39,8 +40,8 @@ export default function ConnectionDetail() {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary"></div>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <LoadingSpinner size="md" />
         </div>
       </Layout>
     );

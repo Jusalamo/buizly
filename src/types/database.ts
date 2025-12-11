@@ -45,6 +45,9 @@ export interface UserSettings {
   profile_visibility: string;
   google_calendar_connected: boolean;
   google_refresh_token: string | null;
+  outlook_calendar_connected: boolean;
+  outlook_refresh_token: string | null;
+  ical_url: string | null;
   theme: string;
   created_at: string;
   updated_at: string;
