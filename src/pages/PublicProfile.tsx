@@ -3,14 +3,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Mail, Phone, Briefcase, Globe, Download, Send, Building, Loader2, Lock, Smartphone } from "lucide-react";
+import { Mail, Phone, Briefcase, Globe, Download, Building, Lock, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { LoadingSpinner } from "@/components/LoadingSpinner";
-import { connectFormSchema, type ConnectFormData } from "@/lib/validationSchemas";
+import { ProfileCardSkeleton } from "@/components/skeletons/ProfileCardSkeleton";
 import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -24,7 +19,7 @@ interface PublicSafeProfile extends Omit<Profile, 'email' | 'phone'> {
 interface ProfileState {
   profile: PublicSafeProfile | null;
   isPrivate: boolean;
-  basicInfo: { name: string; avatar_url: string | null } | null;
+  basicInfo: { name: string; avatar_url: string | null; job_title?: string | null; company?: string | null } | null;
   isAuthenticated: boolean;
 }
 
@@ -34,15 +29,6 @@ export default function PublicProfile() {
   const { toast } = useToast();
   const [state, setState] = useState<ProfileState>({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated: false });
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [isConnectOpen, setIsConnectOpen] = useState(false);
-  const [connectForm, setConnectForm] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    message: ""
-  });
-  const [formErrors, setFormErrors] = useState<Partial<Record<keyof ConnectFormData, string>>>({});
 
   useEffect(() => {
     loadProfile();
@@ -63,7 +49,7 @@ export default function PublicProfile() {
       // First fetch basic info (always accessible)
       const { data: basicData } = await supabase
         .from("profiles")
-        .select("id, full_name, avatar_url")
+        .select("id, full_name, avatar_url, job_title, company")
         .eq("id", userId)
         .maybeSingle();
 
@@ -101,11 +87,16 @@ export default function PublicProfile() {
 
         setState({ profile: safeProfile, isPrivate: false, basicInfo: null, isAuthenticated });
       } else {
-        // Profile exists but is private - show limited info
+        // Profile exists but is private - show limited info (like Instagram)
         setState({ 
           profile: null, 
           isPrivate: true, 
-          basicInfo: { name: basicData.full_name, avatar_url: basicData.avatar_url },
+          basicInfo: { 
+            name: basicData.full_name, 
+            avatar_url: basicData.avatar_url,
+            job_title: basicData.job_title,
+            company: basicData.company
+          },
           isAuthenticated
         });
       }
@@ -155,7 +146,38 @@ END:VCARD`;
     window.URL.revokeObjectURL(url);
   };
 
-  const handleDownloadApp = () => {
+  const handleOpenApp = () => {
+    // Deep link to open the app with this profile
+    const deepLink = `buizly://profile/${userId}`;
+    const appStoreUrl = "https://apps.apple.com/app/buizly";
+    const playStoreUrl = "https://play.google.com/store/apps/details?id=com.buizly.app";
+    
+    // Try to open the app, fallback to store
+    const userAgent = navigator.userAgent || navigator.vendor;
+    
+    if (/iPad|iPhone|iPod/.test(userAgent)) {
+      // iOS: try deep link, then app store
+      window.location.href = deepLink;
+      setTimeout(() => {
+        window.location.href = appStoreUrl;
+      }, 500);
+    } else if (/android/i.test(userAgent)) {
+      // Android: try deep link, then play store
+      window.location.href = deepLink;
+      setTimeout(() => {
+        window.location.href = playStoreUrl;
+      }, 500);
+    } else {
+      // Desktop: redirect to web app
+      if (state.isAuthenticated) {
+        navigate(`/network`);
+      } else {
+        navigate(`/auth?redirect=/connect/${userId}`);
+      }
+    }
+  };
+
+  const handleGetApp = () => {
     const userAgent = navigator.userAgent || navigator.vendor;
     
     if (/iPad|iPhone|iPod/.test(userAgent)) {
@@ -170,98 +192,95 @@ END:VCARD`;
     }
   };
 
-  const handleConnect = async () => {
-    if (!state.profile) return;
-
-    const validation = connectFormSchema.safeParse(connectForm);
-    if (!validation.success) {
-      const errors: Partial<Record<keyof ConnectFormData, string>> = {};
-      validation.error.errors.forEach(err => {
-        if (err.path[0]) {
-          errors[err.path[0] as keyof ConnectFormData] = err.message;
-        }
-      });
-      setFormErrors(errors);
-      return;
-    }
-
-    setFormErrors({});
-    setSubmitting(true);
-
-    try {
-      const { error } = await supabase.functions.invoke('create-notification', {
-        body: {
-          user_id: state.profile.id,
-          type: "new_connection",
-          title: "New Connection Request",
-          message: `${connectForm.name} wants to connect with you`,
-          data: {
-            name: connectForm.name,
-            email: connectForm.email,
-            phone: connectForm.phone || null,
-            message: connectForm.message || null
-          }
-        }
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: "Connection sent!",
-        description: `${state.profile.full_name} will receive your details`
-      });
-
-      setIsConnectOpen(false);
-      setConnectForm({ name: "", email: "", phone: "", message: "" });
-    } catch (error: any) {
-      toast({
-        title: "Error sending connection",
-        description: error.message,
-        variant: "destructive"
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
+  // Skeleton loading state
   if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <LoadingSpinner size="md" />
-      </div>
-    );
+    return <ProfileCardSkeleton />;
   }
 
-  // Profile is private - show limited info
+  // Profile is private - show limited info (Instagram style)
   if (state.isPrivate && state.basicInfo) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="bg-card border-border p-8 max-w-lg w-full text-center space-y-6">
-          {state.basicInfo.avatar_url ? (
-            <img 
-              src={state.basicInfo.avatar_url} 
-              alt={state.basicInfo.name}
-              className="w-24 h-24 rounded-full object-cover mx-auto border-4 border-primary"
-            />
-          ) : (
-            <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center mx-auto border-4 border-primary">
-              <span className="text-primary text-3xl font-bold">
-                {state.basicInfo.name.charAt(0).toUpperCase()}
-              </span>
+      <div className="min-h-screen bg-background">
+        {/* Header with gradient */}
+        <div className="bg-gradient-to-b from-primary/20 to-background pt-12 pb-20 px-4">
+          <div className="max-w-lg mx-auto text-center">
+            {state.basicInfo.avatar_url ? (
+              <img 
+                src={state.basicInfo.avatar_url} 
+                alt={state.basicInfo.name}
+                className="w-28 h-28 rounded-full object-cover mx-auto mb-4 border-4 border-primary"
+              />
+            ) : (
+              <div className="w-28 h-28 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4 border-4 border-primary">
+                <span className="text-primary text-4xl font-bold">
+                  {state.basicInfo.name.charAt(0).toUpperCase()}
+                </span>
+              </div>
+            )}
+            
+            <h1 className="text-3xl font-bold text-foreground">{state.basicInfo.name}</h1>
+            {state.basicInfo.job_title && (
+              <p className="text-primary font-medium mt-1">{state.basicInfo.job_title}</p>
+            )}
+            {state.basicInfo.company && (
+              <p className="text-muted-foreground">{state.basicInfo.company}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="max-w-lg mx-auto px-4 -mt-8 space-y-6 pb-12">
+          {/* Private Account Message */}
+          <Card className="bg-card border-border p-8 text-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+                <Lock className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-foreground mb-1">This Account is Private</h2>
+                <p className="text-muted-foreground text-sm">
+                  Sign in to Buizly to request to connect with {state.basicInfo.name.split(' ')[0]}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Action Buttons */}
+          <Card className="bg-card border-border p-6 space-y-3">
+            {state.isAuthenticated ? (
+              <Button 
+                onClick={handleOpenApp}
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
+              >
+                <ExternalLink className="h-5 w-5 mr-2" />
+                Open App
+              </Button>
+            ) : (
+              <Button 
+                onClick={handleGetApp}
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
+              >
+                <ExternalLink className="h-5 w-5 mr-2" />
+                Get Buizly
+              </Button>
+            )}
+          </Card>
+
+          {/* App Download CTA */}
+          {!state.isAuthenticated && (
+            <div className="text-center pt-4">
+              <p className="text-sm text-muted-foreground mb-2">
+                Already have Buizly?
+              </p>
+              <Button
+                onClick={() => navigate("/auth")}
+                variant="ghost"
+                className="text-primary hover:bg-primary/10"
+              >
+                Sign In
+              </Button>
             </div>
           )}
-          
-          <h1 className="text-2xl font-bold text-foreground">{state.basicInfo.name}</h1>
-          
-          <div className="flex items-center justify-center gap-2 text-muted-foreground">
-            <Lock className="h-5 w-5" />
-            <p>This account is private and info can't be viewed</p>
-          </div>
-
-          <Button onClick={() => navigate("/auth")} className="bg-primary text-primary-foreground">
-            Sign in to Connect
-          </Button>
-        </Card>
+        </div>
       </div>
     );
   }
@@ -283,7 +302,7 @@ END:VCARD`;
     );
   }
 
-  // Full profile view
+  // Full profile view - Digital Business Card
   return (
     <div className="min-h-screen bg-background">
       {/* Header with gradient */}
@@ -372,96 +391,28 @@ END:VCARD`;
           )}
         </Card>
 
-        {/* Action Buttons */}
+        {/* Action Buttons - Based on user state */}
         <Card className="bg-card border-border p-6 space-y-3">
-          <Dialog open={isConnectOpen} onOpenChange={setIsConnectOpen}>
-            <DialogTrigger asChild>
-              <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6">
-                <Smartphone className="h-5 w-5 mr-2" />
-                Connect on Buizly
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-card border-border">
-              <DialogHeader>
-                <DialogTitle className="text-foreground">Send Your Details</DialogTitle>
-                <DialogDescription className="text-muted-foreground">
-                  {state.profile.full_name} will receive your contact information
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 mt-4">
-                <div>
-                  <Label htmlFor="name" className="text-foreground">Your Name *</Label>
-                  <Input
-                    id="name"
-                    value={connectForm.name}
-                    onChange={(e) => setConnectForm(prev => ({ ...prev, name: e.target.value }))}
-                    className={`bg-background border-border text-foreground ${formErrors.name ? 'border-destructive' : ''}`}
-                    placeholder="John Doe"
-                    maxLength={100}
-                  />
-                  {formErrors.name && (
-                    <p className="text-destructive text-sm mt-1">{formErrors.name}</p>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="email" className="text-foreground">Your Email *</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={connectForm.email}
-                    onChange={(e) => setConnectForm(prev => ({ ...prev, email: e.target.value }))}
-                    className={`bg-background border-border text-foreground ${formErrors.email ? 'border-destructive' : ''}`}
-                    placeholder="john@example.com"
-                    maxLength={255}
-                  />
-                  {formErrors.email && (
-                    <p className="text-destructive text-sm mt-1">{formErrors.email}</p>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="phone" className="text-foreground">Your Phone (Optional)</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={connectForm.phone}
-                    onChange={(e) => setConnectForm(prev => ({ ...prev, phone: e.target.value }))}
-                    className={`bg-background border-border text-foreground ${formErrors.phone ? 'border-destructive' : ''}`}
-                    placeholder="+1 (555) 000-0000"
-                    maxLength={20}
-                  />
-                  {formErrors.phone && (
-                    <p className="text-destructive text-sm mt-1">{formErrors.phone}</p>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="message" className="text-foreground">Message (Optional)</Label>
-                  <Textarea
-                    id="message"
-                    value={connectForm.message}
-                    onChange={(e) => setConnectForm(prev => ({ ...prev, message: e.target.value }))}
-                    className={`bg-background border-border text-foreground ${formErrors.message ? 'border-destructive' : ''}`}
-                    placeholder="I'd love to connect..."
-                    rows={3}
-                    maxLength={500}
-                  />
-                  {formErrors.message && (
-                    <p className="text-destructive text-sm mt-1">{formErrors.message}</p>
-                  )}
-                </div>
-                <Button 
-                  onClick={handleConnect} 
-                  className="w-full bg-primary text-primary-foreground"
-                  disabled={submitting}
-                >
-                  {submitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
-                  Send Connection Request
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          {/* Primary CTA: Open App (if logged in) or Get Buizly (if not) */}
+          {state.isAuthenticated ? (
+            <Button 
+              onClick={handleOpenApp}
+              className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
+            >
+              <ExternalLink className="h-5 w-5 mr-2" />
+              Open App
+            </Button>
+          ) : (
+            <Button 
+              onClick={handleGetApp}
+              className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
+            >
+              <ExternalLink className="h-5 w-5 mr-2" />
+              Get Buizly
+            </Button>
+          )}
 
+          {/* Secondary CTA: Save Contact to Phone */}
           <Button
             onClick={downloadVCard}
             variant="outline"
@@ -472,19 +423,21 @@ END:VCARD`;
           </Button>
         </Card>
 
-        {/* App Download CTA */}
-        <div className="text-center pt-4">
-          <p className="text-sm text-muted-foreground mb-2">
-            Want your own digital business card?
-          </p>
-          <Button
-            onClick={handleDownloadApp}
-            variant="ghost"
-            className="text-primary hover:bg-primary/10"
-          >
-            Get Buizly
-          </Button>
-        </div>
+        {/* Sign in prompt for non-authenticated users */}
+        {!state.isAuthenticated && (
+          <div className="text-center pt-4">
+            <p className="text-sm text-muted-foreground mb-2">
+              Already have Buizly?
+            </p>
+            <Button
+              onClick={() => navigate("/auth")}
+              variant="ghost"
+              className="text-primary hover:bg-primary/10"
+            >
+              Sign In
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

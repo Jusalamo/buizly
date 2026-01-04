@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { QRCode } from "@/components/QRCode";
+import { DashboardSkeleton } from "@/components/skeletons/ProfileCardSkeleton";
 import { Users, Calendar, TrendingUp, MapPin, Clock, ChevronRight, Filter } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Database } from "@/integrations/supabase/types";
@@ -31,6 +32,7 @@ export default function Dashboard() {
   const [allConnections, setAllConnections] = useState<Connection[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [connectionFilter, setConnectionFilter] = useState<TimeFilter>("all");
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -42,45 +44,49 @@ export default function Dashboard() {
   }, [connectionFilter, allConnections]);
 
   const loadData = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      navigate("/auth");
-      return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+
+      // Load profile
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      
+      setProfile(profileData);
+
+      // Load all connections
+      const { data: connectionsData } = await supabase
+        .from("connections")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+      
+      setAllConnections(connectionsData || []);
+
+      // Load upcoming meetings
+      const today = new Date().toISOString().split('T')[0];
+      const { data: meetingsData } = await supabase
+        .from("meetings")
+        .select("*")
+        .eq("user_id", user.id)
+        .gte("meeting_date", today)
+        .neq("status", "cancelled")
+        .order("meeting_date", { ascending: true })
+        .limit(5);
+      
+      setMeetings((meetingsData || []).map(m => ({
+        ...m,
+        status: (m.status || 'pending') as MeetingStatus
+      })));
+    } finally {
+      setLoading(false);
     }
-
-    // Load profile
-    const { data: profileData } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
-    
-    setProfile(profileData);
-
-    // Load all connections
-    const { data: connectionsData } = await supabase
-      .from("connections")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
-    
-    setAllConnections(connectionsData || []);
-
-    // Load upcoming meetings
-    const today = new Date().toISOString().split('T')[0];
-    const { data: meetingsData } = await supabase
-      .from("meetings")
-      .select("*")
-      .eq("user_id", user.id)
-      .gte("meeting_date", today)
-      .neq("status", "cancelled")
-      .order("meeting_date", { ascending: true })
-      .limit(5);
-    
-    setMeetings((meetingsData || []).map(m => ({
-      ...m,
-      status: (m.status || 'pending') as MeetingStatus
-    })));
   };
 
   const filterConnections = () => {
@@ -112,6 +118,16 @@ export default function Dashboard() {
     weekAgo.setDate(weekAgo.getDate() - 7);
     return allConnections.filter(c => new Date(c.created_at) > weekAgo).length;
   };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="max-w-4xl mx-auto p-6">
+          <DashboardSkeleton />
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
