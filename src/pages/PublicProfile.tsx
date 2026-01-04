@@ -15,17 +15,24 @@ import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
+// Public-safe profile type that excludes sensitive PII for unauthenticated viewers
+interface PublicSafeProfile extends Omit<Profile, 'email' | 'phone'> {
+  email: string | null;
+  phone: string | null;
+}
+
 interface ProfileState {
-  profile: Profile | null;
+  profile: PublicSafeProfile | null;
   isPrivate: boolean;
   basicInfo: { name: string; avatar_url: string | null } | null;
+  isAuthenticated: boolean;
 }
 
 export default function PublicProfile() {
   const { userId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [state, setState] = useState<ProfileState>({ profile: null, isPrivate: false, basicInfo: null });
+  const [state, setState] = useState<ProfileState>({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated: false });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [isConnectOpen, setIsConnectOpen] = useState(false);
@@ -49,6 +56,10 @@ export default function PublicProfile() {
     }
 
     try {
+      // Check if the current user is authenticated
+      const { data: { session } } = await supabase.auth.getSession();
+      const isAuthenticated = !!session?.user;
+
       // First fetch basic info (always accessible)
       const { data: basicData } = await supabase
         .from("profiles")
@@ -58,7 +69,7 @@ export default function PublicProfile() {
 
       if (!basicData) {
         // Profile truly doesn't exist
-        setState({ profile: null, isPrivate: false, basicInfo: null });
+        setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated });
         setLoading(false);
         return;
       }
@@ -76,18 +87,31 @@ export default function PublicProfile() {
           .eq("id", userId)
           .single();
 
-        setState({ profile: profileData, isPrivate: false, basicInfo: null });
+        // Strip sensitive PII (email, phone) for unauthenticated viewers
+        // to prevent scraping attacks
+        let safeProfile: PublicSafeProfile | null = null;
+        if (profileData) {
+          safeProfile = {
+            ...profileData,
+            // Only expose email/phone to authenticated users
+            email: isAuthenticated ? profileData.email : null,
+            phone: isAuthenticated ? profileData.phone : null,
+          };
+        }
+
+        setState({ profile: safeProfile, isPrivate: false, basicInfo: null, isAuthenticated });
       } else {
         // Profile exists but is private - show limited info
         setState({ 
           profile: null, 
           isPrivate: true, 
-          basicInfo: { name: basicData.full_name, avatar_url: basicData.avatar_url } 
+          basicInfo: { name: basicData.full_name, avatar_url: basicData.avatar_url },
+          isAuthenticated
         });
       }
     } catch (error) {
       console.error("Error loading profile:", error);
-      setState({ profile: null, isPrivate: false, basicInfo: null });
+      setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated: false });
     } finally {
       setLoading(false);
     }
@@ -114,7 +138,7 @@ export default function PublicProfile() {
     const vcard = `BEGIN:VCARD
 VERSION:3.0
 FN:${state.profile.full_name}
-EMAIL:${state.profile.email}
+${state.profile.email ? `EMAIL:${state.profile.email}` : ''}
 TEL:${state.profile.phone || ''}
 TITLE:${state.profile.job_title || ''}
 ORG:${state.profile.company || ''}

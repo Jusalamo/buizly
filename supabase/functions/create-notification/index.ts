@@ -64,6 +64,25 @@ const handler = async (req: Request): Promise<Response> => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
+    // Verify authentication
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Authorization required" }),
+        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+    
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Invalid or expired token" }),
+        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     const body = await req.json();
     
     // Validate required fields
@@ -95,10 +114,9 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // Rate limit check
-    const rateLimitKey = req.headers.get("x-forwarded-for") || "anonymous";
-    if (!checkRateLimit(rateLimitKey)) {
-      console.warn("[create-notification] Rate limit exceeded for:", rateLimitKey);
+    // Rate limit check per authenticated user
+    if (!checkRateLimit(user.id)) {
+      console.warn("[create-notification] Rate limit exceeded for user:", user.id);
       return new Response(
         JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
         { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
