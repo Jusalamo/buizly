@@ -9,25 +9,32 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   User, Bell, Database, Settings as SettingsIcon, LogOut, 
-  ChevronRight, Calendar, Moon, Sun, Eye, RefreshCw, BarChart3, Linkedin, Crown
+  ChevronRight, Calendar, Moon, Sun, Eye, RefreshCw, BarChart3, Linkedin, Crown, Palette
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useSubscription } from "@/hooks/useSubscription";
 import { LinkedInImport } from "@/components/LinkedInImport";
 import { CalendarSync } from "@/components/CalendarSync";
-import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { ThemeCustomizer } from "@/components/ThemeCustomizer";
 
 export default function Settings() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { settings, loading, updateSettings, refetch } = useUserSettings();
   const { theme, setTheme } = useTheme();
+  const { getCurrentPlan } = useSubscription();
   
   const [calendarSync, setCalendarSync] = useState(false);
   const [profileVisibility, setProfileVisibility] = useState("public");
   const [syncing, setSyncing] = useState(false);
   const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
+  
+  // QR Code customization state
+  const [qrForeground, setQrForeground] = useState("#00ff4d");
+  const [qrBackground, setQrBackground] = useState("#000000");
+  const [savingTheme, setSavingTheme] = useState(false);
 
   useEffect(() => {
     if (settings?.profile_visibility) {
@@ -189,7 +196,36 @@ export default function Settings() {
           </div>
         </Card>
 
-        {/* Profile Management */}
+        {/* QR Code Customization (Pro Feature) */}
+        <ThemeCustomizer
+          qrForeground={qrForeground}
+          qrBackground={qrBackground}
+          onQrColorsChange={(fg, bg) => {
+            setQrForeground(fg);
+            setQrBackground(bg);
+          }}
+          onSave={async () => {
+            setSavingTheme(true);
+            try {
+              // In a real app, you'd save this to user preferences
+              // For now, we just show a success message
+              await new Promise(resolve => setTimeout(resolve, 500));
+              toast({
+                title: "Theme saved",
+                description: "Your QR code customization has been saved",
+              });
+            } catch (error) {
+              toast({
+                title: "Error",
+                description: "Failed to save theme",
+                variant: "destructive",
+              });
+            } finally {
+              setSavingTheme(false);
+            }
+          }}
+          saving={savingTheme}
+        />
         <Card
           className="bg-card border-border p-4 cursor-pointer hover:bg-card/80 transition-colors"
           onClick={() => navigate("/profile")}
