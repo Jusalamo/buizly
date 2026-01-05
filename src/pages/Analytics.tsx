@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart3, Eye, MapPin, Smartphone, Calendar, TrendingUp, Globe, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { AnalyticsSkeleton } from "@/components/skeletons/PageSkeletons";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 interface ProfileView {
@@ -140,9 +140,7 @@ export default function Analytics() {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <LoadingSpinner size="md" />
-        </div>
+        <AnalyticsSkeleton />
       </Layout>
     );
   }

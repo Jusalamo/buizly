@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Mail, Phone, Globe, Building, Briefcase, Share2, Edit, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { ProfileSkeleton } from "@/components/skeletons/PageSkeletons";
 import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -71,9 +71,7 @@ export default function Profile() {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <LoadingSpinner size="md" />
-        </div>
+        <ProfileSkeleton />
       </Layout>
     );
   }

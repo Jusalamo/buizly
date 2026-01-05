@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { ConnectionLimitBadge } from "@/components/ConnectionLimitBadge";
-import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { NetworkSkeleton } from "@/components/skeletons/PageSkeletons";
 import type { Database } from "@/integrations/supabase/types";
 
 type Connection = Database["public"]["Tables"]["connections"]["Row"];
@@ -186,9 +186,7 @@ export default function Network() {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <LoadingSpinner size="md" />
-        </div>
+        <NetworkSkeleton />
       </Layout>
     );
   }

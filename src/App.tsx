@@ -25,6 +25,7 @@ import PublicProfile from "./pages/PublicProfile";
 import OAuth2Callback from "./pages/OAuth2Callback";
 import Analytics from "./pages/Analytics";
 import Subscription from "./pages/Subscription";
+import Discover from "./pages/Discover";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +36,7 @@ function AppRoutes() {
       <Route path="/" element={<Dashboard />} />
       <Route path="/network" element={<Network />} />
       <Route path="/capture" element={<Capture />} />
+      <Route path="/discover" element={<Discover />} />
       <Route path="/schedule" element={<Schedule />} />
       <Route path="/profile" element={<Profile />} />
       <Route path="/profile/edit" element={<ProfileEdit />} />

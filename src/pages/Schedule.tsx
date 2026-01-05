@@ -11,7 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useMeetings } from "@/hooks/useMeetings";
-import { Loader2, MapPin, Users, Plus, X } from "lucide-react";
+import { ContactSearchModal } from "@/components/ContactSearchModal";
+import { Loader2, MapPin, Users, Plus, X, Search } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 
 type Connection = Database["public"]["Tables"]["connections"]["Row"];
@@ -40,6 +41,7 @@ export default function Schedule() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [newParticipantEmail, setNewParticipantEmail] = useState("");
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [showContactSearch, setShowContactSearch] = useState(false);
   
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -253,9 +255,21 @@ export default function Schedule() {
 
         {/* Participants */}
         <Card className="bg-card border-border p-4 space-y-4">
-          <div className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            <Label className="text-foreground">Participants</Label>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              <Label className="text-foreground">Participants</Label>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowContactSearch(true)}
+              className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              From Contacts
+            </Button>
           </div>
 
           {/* Current Participants */}
@@ -270,7 +284,7 @@ export default function Schedule() {
                   <button
                     type="button"
                     onClick={() => removeParticipant(p.email)}
-                    className="text-muted-foreground hover:text-destructive"
+                    className="text-muted-foreground hover:text-destructive transition-colors"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -284,7 +298,7 @@ export default function Schedule() {
             <Input
               value={newParticipantEmail}
               onChange={(e) => setNewParticipantEmail(e.target.value)}
-              placeholder="Add participant email..."
+              placeholder="Add email manually..."
               type="email"
               className="bg-secondary border-border text-foreground"
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addParticipant())}
@@ -293,36 +307,11 @@ export default function Schedule() {
               type="button"
               variant="outline"
               onClick={addParticipant}
-              className="border-primary text-primary flex-shrink-0"
+              className="border-primary text-primary hover:bg-primary hover:text-primary-foreground flex-shrink-0"
             >
               <Plus className="h-4 w-4" />
             </Button>
           </div>
-
-          {/* Add from Network */}
-          {connections.length > 0 && (
-            <div>
-              <p className="text-sm text-muted-foreground mb-2">Or add from your network:</p>
-              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                {connections
-                  .filter(c => c.connection_email && !participants.some(p => p.email === c.connection_email))
-                  .slice(0, 10)
-                  .map((connection) => (
-                    <Button
-                      key={connection.id}
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => addFromNetwork(connection)}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <Plus className="h-3 w-3 mr-1" />
-                      {connection.connection_name}
-                    </Button>
-                  ))}
-              </div>
-            </div>
-          )}
         </Card>
 
         {/* Description */}
@@ -361,6 +350,18 @@ export default function Schedule() {
             "Schedule Meeting"
           )}
         </Button>
+
+        {/* Contact Search Modal */}
+        <ContactSearchModal
+          open={showContactSearch}
+          onOpenChange={setShowContactSearch}
+          existingParticipants={participants}
+          onSelectContact={(participant) => {
+            if (!participants.some(p => p.email === participant.email)) {
+              setParticipants([...participants, participant]);
+            }
+          }}
+        />
       </div>
     </Layout>
   );
