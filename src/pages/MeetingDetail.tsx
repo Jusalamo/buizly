@@ -8,7 +8,7 @@ import { ParticipantsList } from "@/components/ParticipantsList";
 import { VoiceRecorder } from "@/components/VoiceRecorder";
 import { PhotoUploader } from "@/components/PhotoUploader";
 import { MeetingForm } from "@/components/MeetingForm";
-import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { MeetingDetailSkeleton } from "@/components/skeletons/PageSkeletons";
 import { useToast } from "@/hooks/use-toast";
 import { useMeetings } from "@/hooks/useMeetings";
 import { 
@@ -115,9 +115,7 @@ export default function MeetingDetail() {
   if (loading) {
     return (
       <Layout title="Meeting">
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <LoadingSpinner size="md" />
-        </div>
+        <MeetingDetailSkeleton />
       </Layout>
     );
   }

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { to: "/", icon: Home, label: "Home", matchPaths: ["/", "/meeting"] },
   { to: "/network", icon: Users, label: "Network", matchPaths: ["/network", "/connection"] },
-  { to: "/capture", icon: UserPlus, label: "Add", matchPaths: ["/capture"] },
+  { to: "/discover", icon: UserPlus, label: "Add", matchPaths: ["/discover", "/capture"] },
   { to: "/schedule", icon: Calendar, label: "Schedule", matchPaths: ["/schedule"] },
   { to: "/settings", icon: Settings, label: "Settings", matchPaths: ["/settings", "/profile", "/analytics", "/subscription"] },
 ];

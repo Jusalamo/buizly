@@ -3,9 +3,10 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Mail, Phone, Briefcase, Globe, Download, Building, Lock, ExternalLink } from "lucide-react";
+import { Mail, Phone, Briefcase, Globe, Download, Building, Lock, Smartphone } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ProfileCardSkeleton } from "@/components/skeletons/ProfileCardSkeleton";
+import { OpenAppModal } from "@/components/OpenAppModal";
 import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -29,6 +30,7 @@ export default function PublicProfile() {
   const { toast } = useToast();
   const [state, setState] = useState<ProfileState>({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated: false });
   const [loading, setLoading] = useState(true);
+  const [showOpenAppModal, setShowOpenAppModal] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -147,34 +149,7 @@ END:VCARD`;
   };
 
   const handleOpenApp = () => {
-    // Deep link to open the app with this profile
-    const deepLink = `buizly://profile/${userId}`;
-    const appStoreUrl = "https://apps.apple.com/app/buizly";
-    const playStoreUrl = "https://play.google.com/store/apps/details?id=com.buizly.app";
-    
-    // Try to open the app, fallback to store
-    const userAgent = navigator.userAgent || navigator.vendor;
-    
-    if (/iPad|iPhone|iPod/.test(userAgent)) {
-      // iOS: try deep link, then app store
-      window.location.href = deepLink;
-      setTimeout(() => {
-        window.location.href = appStoreUrl;
-      }, 500);
-    } else if (/android/i.test(userAgent)) {
-      // Android: try deep link, then play store
-      window.location.href = deepLink;
-      setTimeout(() => {
-        window.location.href = playStoreUrl;
-      }, 500);
-    } else {
-      // Desktop: redirect to web app
-      if (state.isAuthenticated) {
-        navigate(`/network`);
-      } else {
-        navigate(`/auth?redirect=/connect/${userId}`);
-      }
-    }
+    setShowOpenAppModal(true);
   };
 
   const handleGetApp = () => {
@@ -251,15 +226,15 @@ END:VCARD`;
                 onClick={handleOpenApp}
                 className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
               >
-                <ExternalLink className="h-5 w-5 mr-2" />
+                <Smartphone className="h-5 w-5 mr-2" />
                 Open App
               </Button>
             ) : (
               <Button 
-                onClick={handleGetApp}
+                onClick={handleOpenApp}
                 className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
               >
-                <ExternalLink className="h-5 w-5 mr-2" />
+                <Smartphone className="h-5 w-5 mr-2" />
                 Get Buizly
               </Button>
             )}
@@ -399,15 +374,15 @@ END:VCARD`;
               onClick={handleOpenApp}
               className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
             >
-              <ExternalLink className="h-5 w-5 mr-2" />
+              <Smartphone className="h-5 w-5 mr-2" />
               Open App
             </Button>
           ) : (
             <Button 
-              onClick={handleGetApp}
+              onClick={handleOpenApp}
               className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
             >
-              <ExternalLink className="h-5 w-5 mr-2" />
+              <Smartphone className="h-5 w-5 mr-2" />
               Get Buizly
             </Button>
           )}
@@ -439,6 +414,14 @@ END:VCARD`;
           </div>
         )}
       </div>
+
+      {/* Open App Modal */}
+      <OpenAppModal
+        open={showOpenAppModal}
+        onOpenChange={setShowOpenAppModal}
+        profileId={userId || ""}
+        profileName={state.profile?.full_name || state.basicInfo?.name}
+      />
     </div>
   );
 }
