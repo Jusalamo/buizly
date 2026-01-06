@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Mail, Phone, Briefcase, Globe, Download, Building, Lock, Smartphone } from "lucide-react";
+import { Mail, Phone, Briefcase, Globe, Download, Building, Lock, Smartphone, Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ProfileCardSkeleton } from "@/components/skeletons/ProfileCardSkeleton";
 import { OpenAppModal } from "@/components/OpenAppModal";
@@ -11,7 +11,6 @@ import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
-// Public-safe profile type that excludes sensitive PII for unauthenticated viewers
 interface PublicSafeProfile extends Omit<Profile, 'email' | 'phone'> {
   email: string | null;
   phone: string | null;
@@ -20,17 +19,25 @@ interface PublicSafeProfile extends Omit<Profile, 'email' | 'phone'> {
 interface ProfileState {
   profile: PublicSafeProfile | null;
   isPrivate: boolean;
-  basicInfo: { name: string; avatar_url: string | null; job_title?: string | null; company?: string | null } | null;
+  basicInfo: { name: string; avatar_url: string | null } | null;
   isAuthenticated: boolean;
+  currentUserId: string | null;
 }
 
 export default function PublicProfile() {
   const { userId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [state, setState] = useState<ProfileState>({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated: false });
+  const [state, setState] = useState<ProfileState>({ 
+    profile: null, 
+    isPrivate: false, 
+    basicInfo: null, 
+    isAuthenticated: false,
+    currentUserId: null
+  });
   const [loading, setLoading] = useState(true);
   const [showOpenAppModal, setShowOpenAppModal] = useState(false);
+  const [notificationSent, setNotificationSent] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -44,67 +51,63 @@ export default function PublicProfile() {
     }
 
     try {
-      // Check if the current user is authenticated
+      // Check authentication
       const { data: { session } } = await supabase.auth.getSession();
       const isAuthenticated = !!session?.user;
+      const currentUserId = session?.user?.id || null;
 
-      // First fetch basic info (always accessible)
-      const { data: basicData } = await supabase
-        .from("profiles")
-        .select("id, full_name, avatar_url, job_title, company")
-        .eq("id", userId)
-        .maybeSingle();
+      // Parallel fetch: basic info + visibility setting
+      const [basicResult, settingsResult] = await Promise.all([
+        supabase.from("profiles").select("id, full_name, avatar_url").eq("id", userId).maybeSingle(),
+        supabase.from("user_settings").select("profile_visibility").eq("user_id", userId).maybeSingle()
+      ]);
 
-      if (!basicData) {
-        // Profile truly doesn't exist
-        setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated });
+      if (!basicResult.data) {
+        setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated, currentUserId });
         setLoading(false);
         return;
       }
 
-      // Check if user can view full profile using can_view_profile function
-      const { data: canView } = await supabase.rpc("can_view_profile", {
-        profile_id: userId
-      });
+      const visibility = settingsResult.data?.profile_visibility || 'public';
+      const isPrivate = visibility === 'private';
 
-      if (canView) {
-        // User can view full profile
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", userId)
-          .single();
-
-        // Strip sensitive PII (email, phone) for unauthenticated viewers
-        // to prevent scraping attacks
-        let safeProfile: PublicSafeProfile | null = null;
-        if (profileData) {
-          safeProfile = {
-            ...profileData,
-            // Only expose email/phone to authenticated users
-            email: isAuthenticated ? profileData.email : null,
-            phone: isAuthenticated ? profileData.phone : null,
-          };
-        }
-
-        setState({ profile: safeProfile, isPrivate: false, basicInfo: null, isAuthenticated });
-      } else {
-        // Profile exists but is private - show limited info (like Instagram)
+      // For private profiles: only show name and photo, NO additional info
+      if (isPrivate && currentUserId !== userId) {
         setState({ 
           profile: null, 
           isPrivate: true, 
           basicInfo: { 
-            name: basicData.full_name, 
-            avatar_url: basicData.avatar_url,
-            job_title: basicData.job_title,
-            company: basicData.company
+            name: basicResult.data.full_name, 
+            avatar_url: basicResult.data.avatar_url
           },
-          isAuthenticated
+          isAuthenticated,
+          currentUserId
         });
+        setLoading(false);
+        return;
       }
+
+      // Can view full profile - fetch complete data
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      // Strip sensitive PII for unauthenticated viewers
+      let safeProfile: PublicSafeProfile | null = null;
+      if (profileData) {
+        safeProfile = {
+          ...profileData,
+          email: isAuthenticated ? profileData.email : null,
+          phone: isAuthenticated ? profileData.phone : null,
+        };
+      }
+
+      setState({ profile: safeProfile, isPrivate: false, basicInfo: null, isAuthenticated, currentUserId });
     } catch (error) {
       console.error("Error loading profile:", error);
-      setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated: false });
+      setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated: false, currentUserId: null });
     } finally {
       setLoading(false);
     }
@@ -115,13 +118,37 @@ export default function PublicProfile() {
     
     try {
       await supabase.functions.invoke('track-profile-view', {
-        body: {
-          profileId: userId,
-          referrer: document.referrer || null,
-        }
+        body: { profileId: userId, referrer: document.referrer || null }
       });
     } catch (error) {
       console.error("Error tracking view:", error);
+    }
+  };
+
+  const notifyPrivateUser = async () => {
+    if (!userId || notificationSent) return;
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Create notification for the private profile owner
+      await supabase.from('notifications').insert({
+        user_id: userId,
+        type: 'profile_shared',
+        title: 'Someone scanned your card',
+        message: user 
+          ? 'A Buizly user scanned your profile card. Would you like to connect with them?'
+          : 'Someone scanned your profile card. Sign in to see who.',
+        data: user ? { scanner_id: user.id } : null
+      });
+
+      setNotificationSent(true);
+      toast({
+        title: "Notification sent",
+        description: `${state.basicInfo?.name} will be notified that you're interested in connecting`,
+      });
+    } catch (error) {
+      console.error("Error sending notification:", error);
     }
   };
 
@@ -152,31 +179,15 @@ END:VCARD`;
     setShowOpenAppModal(true);
   };
 
-  const handleGetApp = () => {
-    const userAgent = navigator.userAgent || navigator.vendor;
-    
-    if (/iPad|iPhone|iPod/.test(userAgent)) {
-      window.location.href = "https://apps.apple.com/app/buizly";
-    } else if (/android/i.test(userAgent)) {
-      window.location.href = "https://play.google.com/store/apps/details?id=com.buizly.app";
-    } else {
-      toast({
-        title: "Download on Mobile",
-        description: "Visit this page on your phone to download the Buizly app!",
-      });
-    }
-  };
-
-  // Skeleton loading state
+  // Skeleton loading
   if (loading) {
     return <ProfileCardSkeleton />;
   }
 
-  // Profile is private - show limited info (Instagram style)
+  // Private profile - show only name and photo, NO connect options
   if (state.isPrivate && state.basicInfo) {
     return (
       <div className="min-h-screen bg-background">
-        {/* Header with gradient */}
         <div className="bg-gradient-to-b from-primary/20 to-background pt-12 pb-20 px-4">
           <div className="max-w-lg mx-auto text-center">
             {state.basicInfo.avatar_url ? (
@@ -194,17 +205,11 @@ END:VCARD`;
             )}
             
             <h1 className="text-3xl font-bold text-foreground">{state.basicInfo.name}</h1>
-            {state.basicInfo.job_title && (
-              <p className="text-primary font-medium mt-1">{state.basicInfo.job_title}</p>
-            )}
-            {state.basicInfo.company && (
-              <p className="text-muted-foreground">{state.basicInfo.company}</p>
-            )}
           </div>
         </div>
 
         <div className="max-w-lg mx-auto px-4 -mt-8 space-y-6 pb-12">
-          {/* Private Account Message */}
+          {/* Private Account Message - NO connect options */}
           <Card className="bg-card border-border p-8 text-center">
             <div className="flex flex-col items-center gap-4">
               <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
@@ -213,49 +218,64 @@ END:VCARD`;
               <div>
                 <h2 className="text-lg font-semibold text-foreground mb-1">This Account is Private</h2>
                 <p className="text-muted-foreground text-sm">
-                  Sign in to Buizly to request to connect with {state.basicInfo.name.split(' ')[0]}
+                  {state.basicInfo.name.split(' ')[0]} has a private profile
                 </p>
               </div>
             </div>
           </Card>
 
-          {/* Action Buttons */}
-          <Card className="bg-card border-border p-6 space-y-3">
-            {state.isAuthenticated ? (
-              <Button 
-                onClick={handleOpenApp}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
-              >
-                <Smartphone className="h-5 w-5 mr-2" />
-                Open App
-              </Button>
-            ) : (
-              <Button 
-                onClick={handleOpenApp}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
-              >
-                <Smartphone className="h-5 w-5 mr-2" />
-                Get Buizly
-              </Button>
-            )}
-          </Card>
+          {/* Notify button - lets the private user know someone scanned their card */}
+          {state.isAuthenticated && !notificationSent && (
+            <Button 
+              onClick={notifyPrivateUser}
+              variant="outline"
+              className="w-full border-primary text-primary hover:bg-primary hover:text-primary-foreground py-6"
+            >
+              <Bell className="h-5 w-5 mr-2" />
+              Let {state.basicInfo.name.split(' ')[0]} know you scanned their card
+            </Button>
+          )}
 
-          {/* App Download CTA */}
-          {!state.isAuthenticated && (
-            <div className="text-center pt-4">
-              <p className="text-sm text-muted-foreground mb-2">
-                Already have Buizly?
+          {notificationSent && (
+            <Card className="bg-primary/10 border-primary/30 p-4 text-center">
+              <p className="text-sm text-foreground">
+                ✓ {state.basicInfo.name.split(' ')[0]} has been notified
               </p>
-              <Button
-                onClick={() => navigate("/auth")}
-                variant="ghost"
-                className="text-primary hover:bg-primary/10"
-              >
-                Sign In
-              </Button>
+            </Card>
+          )}
+
+          {/* Download app for non-authenticated */}
+          {!state.isAuthenticated && (
+            <div className="space-y-4">
+              <Card className="bg-card border-border p-6">
+                <p className="text-center text-muted-foreground text-sm mb-4">
+                  Get Buizly to connect with {state.basicInfo.name.split(' ')[0]}
+                </p>
+                <Button 
+                  onClick={handleOpenApp}
+                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
+                >
+                  <Smartphone className="h-5 w-5 mr-2" />
+                  Get Buizly
+                </Button>
+              </Card>
+              
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground mb-2">Already have Buizly?</p>
+                <Button onClick={() => navigate("/auth")} variant="ghost" className="text-primary hover:bg-primary/10">
+                  Sign In
+                </Button>
+              </div>
             </div>
           )}
         </div>
+
+        <OpenAppModal
+          open={showOpenAppModal}
+          onOpenChange={setShowOpenAppModal}
+          profileId={userId || ""}
+          profileName={state.basicInfo?.name}
+        />
       </div>
     );
   }
@@ -277,10 +297,9 @@ END:VCARD`;
     );
   }
 
-  // Full profile view - Digital Business Card
+  // Full public profile view
   return (
     <div className="min-h-screen bg-background">
-      {/* Header with gradient */}
       <div className="bg-gradient-to-b from-primary/20 to-background pt-12 pb-20 px-4">
         <div className="max-w-lg mx-auto text-center">
           {state.profile.avatar_url ? (
@@ -308,14 +327,12 @@ END:VCARD`;
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-8 space-y-6 pb-12">
-        {/* Bio */}
         {state.profile.bio && (
           <Card className="bg-card border-border p-6">
             <p className="text-foreground leading-relaxed">{state.profile.bio}</p>
           </Card>
         )}
 
-        {/* Contact Info */}
         <Card className="bg-card border-border p-6 space-y-4">
           <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Contact Info</h3>
           
@@ -366,9 +383,8 @@ END:VCARD`;
           )}
         </Card>
 
-        {/* Action Buttons - Based on user state */}
+        {/* CTAs */}
         <Card className="bg-card border-border p-6 space-y-3">
-          {/* Primary CTA: Open App (if logged in) or Get Buizly (if not) */}
           {state.isAuthenticated ? (
             <Button 
               onClick={handleOpenApp}
@@ -387,35 +403,26 @@ END:VCARD`;
             </Button>
           )}
 
-          {/* Secondary CTA: Save Contact to Phone */}
           <Button
             onClick={downloadVCard}
             variant="outline"
-            className="w-full border-primary text-primary hover:bg-primary/10 py-6"
+            className="w-full border-primary text-primary hover:bg-primary hover:text-primary-foreground py-6"
           >
             <Download className="h-5 w-5 mr-2" />
             Save Contact to Phone
           </Button>
         </Card>
 
-        {/* Sign in prompt for non-authenticated users */}
         {!state.isAuthenticated && (
           <div className="text-center pt-4">
-            <p className="text-sm text-muted-foreground mb-2">
-              Already have Buizly?
-            </p>
-            <Button
-              onClick={() => navigate("/auth")}
-              variant="ghost"
-              className="text-primary hover:bg-primary/10"
-            >
+            <p className="text-sm text-muted-foreground mb-2">Already have Buizly?</p>
+            <Button onClick={() => navigate("/auth")} variant="ghost" className="text-primary hover:bg-primary/10">
               Sign In
             </Button>
           </div>
         )}
       </div>
 
-      {/* Open App Modal */}
       <OpenAppModal
         open={showOpenAppModal}
         onOpenChange={setShowOpenAppModal}

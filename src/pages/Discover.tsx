@@ -6,49 +6,47 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, UserPlus, Users, Building, Mail, ArrowRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Search, UserPlus, Users, Building, ArrowRight, Check, X, Clock, UserCheck } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { useConnectionRequests } from "@/hooks/useConnectionRequests";
 import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
-type Connection = Database["public"]["Tables"]["connections"]["Row"];
 
-interface ConnectionRequest {
-  id: string;
-  requester_id: string;
-  target_id: string;
-  status: 'pending' | 'accepted' | 'declined';
-  created_at: string;
-  requester?: Profile;
-  target?: Profile;
+interface ProfileWithVisibility extends Profile {
+  isPrivate?: boolean;
 }
 
 export default function Discover() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Profile[]>([]);
+  const [searchResults, setSearchResults] = useState<ProfileWithVisibility[]>([]);
   const [searching, setSearching] = useState(false);
-  const [activeTab, setActiveTab] = useState<"search" | "manual">("search");
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
-  const [sendingRequest, setSendingRequest] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"search" | "requests" | "manual">("search");
+  const [initialLoading, setInitialLoading] = useState(true);
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  const { 
+    incomingRequests, 
+    outgoingRequests, 
+    loading: requestsLoading,
+    sendRequest,
+    acceptRequest,
+    declineRequest,
+    getRequestStatus
+  } = useConnectionRequests();
 
   // Manual add form
   const [manualForm, setManualForm] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    title: "",
-    company: "",
-    notes: ""
+    name: "", email: "", phone: "", title: "", company: "", notes: ""
   });
   const [savingManual, setSavingManual] = useState(false);
 
   useEffect(() => {
-    loadExistingConnections();
-    loadConnectionRequests();
+    // Initial load complete
+    setInitialLoading(false);
   }, []);
 
   useEffect(() => {
@@ -63,26 +61,6 @@ export default function Discover() {
     return () => clearTimeout(delaySearch);
   }, [searchQuery]);
 
-  const loadExistingConnections = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data } = await supabase
-      .from("connections")
-      .select("*")
-      .eq("user_id", user.id);
-
-    setConnections(data || []);
-  };
-
-  const loadConnectionRequests = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    // For now, we'll store connection status in a simple way
-    // In a full implementation, you'd have a connection_requests table
-  };
-
   const searchProfiles = async () => {
     setSearching(true);
     try {
@@ -91,15 +69,37 @@ export default function Discover() {
 
       const query = searchQuery.toLowerCase();
       
-      const { data, error } = await supabase
+      // Search profiles - always show results regardless of privacy
+      const { data: profiles, error } = await supabase
         .from("profiles")
-        .select("*")
-        .neq("id", user.id) // Exclude self
-        .or(`full_name.ilike.%${query}%,email.ilike.%${query}%,company.ilike.%${query}%,job_title.ilike.%${query}%`)
+        .select("id, full_name, avatar_url, job_title, company, email")
+        .neq("id", user.id)
+        .or(`full_name.ilike.%${query}%,email.ilike.%${query}%,company.ilike.%${query}%`)
         .limit(20);
 
       if (error) throw error;
-      setSearchResults(data || []);
+
+      // Get visibility settings for these profiles
+      if (profiles && profiles.length > 0) {
+        const { data: settings } = await supabase
+          .from("user_settings")
+          .select("user_id, profile_visibility")
+          .in("user_id", profiles.map(p => p.id));
+
+        const visibilityMap = new Map(settings?.map(s => [s.user_id, s.profile_visibility]) || []);
+        
+        const resultsWithVisibility = profiles.map(p => ({
+          ...p,
+          isPrivate: visibilityMap.get(p.id) === 'private',
+          // Hide job_title and company for private profiles in search
+          job_title: visibilityMap.get(p.id) === 'private' ? null : p.job_title,
+          company: visibilityMap.get(p.id) === 'private' ? null : p.company,
+        })) as ProfileWithVisibility[];
+
+        setSearchResults(resultsWithVisibility);
+      } else {
+        setSearchResults([]);
+      }
     } catch (error) {
       console.error("Search error:", error);
     } finally {
@@ -107,57 +107,11 @@ export default function Discover() {
     }
   };
 
-  const handleSendConnectionRequest = async (targetProfile: Profile) => {
-    setSendingRequest(targetProfile.id);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/auth");
-        return;
-      }
-
-      // Check if already connected
-      const isConnected = connections.some(
-        c => c.connection_email === targetProfile.email
-      );
-
-      if (isConnected) {
-        toast({
-          title: "Already connected",
-          description: `You're already connected with ${targetProfile.full_name}`,
-        });
-        return;
-      }
-
-      // Add as connection (in a real app, this would be a pending request)
-      const { error } = await supabase
-        .from("connections")
-        .insert({
-          user_id: user.id,
-          connection_name: targetProfile.full_name,
-          connection_email: targetProfile.email,
-          connection_title: targetProfile.job_title,
-          connection_company: targetProfile.company,
-          connection_phone: targetProfile.phone,
-        });
-
-      if (error) throw error;
-
-      // Refresh connections list
-      await loadExistingConnections();
-
-      toast({
-        title: "Connected!",
-        description: `You're now connected with ${targetProfile.full_name}`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setSendingRequest(null);
+  const handleSendRequest = async (targetProfile: ProfileWithVisibility) => {
+    const result = await sendRequest(targetProfile.id);
+    if (result.success) {
+      // Refresh search to update button states
+      searchProfiles();
     }
   };
 
@@ -205,10 +159,7 @@ export default function Discover() {
         notes: manualForm.notes || null,
       };
 
-      const { error } = await supabase
-        .from("connections")
-        .insert(connectionData);
-
+      const { error } = await supabase.from("connections").insert(connectionData);
       if (error) throw error;
 
       toast({
@@ -218,25 +169,22 @@ export default function Discover() {
           : `${manualForm.name} has been added to your network`,
       });
 
-      // Reset form
       setManualForm({ name: "", email: "", phone: "", title: "", company: "", notes: "" });
       navigate("/network");
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
       setSavingManual(false);
     }
   };
 
-  const getConnectionStatus = (profileId: string, email: string) => {
-    const isConnected = connections.some(c => c.connection_email === email);
-    if (isConnected) return "connected";
-    return "not_connected";
+  const getButtonState = (profile: ProfileWithVisibility) => {
+    const status = getRequestStatus(profile.id);
+    return status;
   };
+
+  // Show requests tab badge
+  const requestCount = incomingRequests.length;
 
   return (
     <Layout>
@@ -246,21 +194,33 @@ export default function Discover() {
           <p className="text-muted-foreground text-sm">Find and connect with professionals</p>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "search" | "manual")}>
-          <TabsList className="grid w-full grid-cols-2 bg-secondary">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+          <TabsList className="grid w-full grid-cols-3 bg-secondary">
             <TabsTrigger 
               value="search" 
               className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
               <Search className="h-4 w-4 mr-2" />
-              Find Users
+              Find
+            </TabsTrigger>
+            <TabsTrigger 
+              value="requests"
+              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground relative"
+            >
+              <UserCheck className="h-4 w-4 mr-2" />
+              Requests
+              {requestCount > 0 && (
+                <Badge className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs px-1.5 py-0.5 min-w-[18px] h-[18px]">
+                  {requestCount}
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger 
               value="manual"
               className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
               <UserPlus className="h-4 w-4 mr-2" />
-              Add Manually
+              Manual
             </TabsTrigger>
           </TabsList>
 
@@ -276,7 +236,6 @@ export default function Discover() {
               />
             </div>
 
-            {/* Search Results */}
             <div className="space-y-3">
               {searching ? (
                 <div className="space-y-3">
@@ -287,7 +246,6 @@ export default function Discover() {
                         <div className="flex-1 space-y-2">
                           <Skeleton className="h-5 w-36" />
                           <Skeleton className="h-4 w-28" />
-                          <Skeleton className="h-3 w-32" />
                         </div>
                         <Skeleton className="h-10 w-24 rounded-md" />
                       </div>
@@ -298,30 +256,20 @@ export default function Discover() {
                 <Card className="bg-card border-border p-8 text-center">
                   <Users className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
                   <p className="text-foreground font-medium mb-1">Search for Buizly users</p>
-                  <p className="text-muted-foreground text-sm">
-                    Enter at least 2 characters to search
-                  </p>
+                  <p className="text-muted-foreground text-sm">Enter at least 2 characters</p>
                 </Card>
               ) : searchResults.length === 0 ? (
                 <Card className="bg-card border-border p-8 text-center">
                   <Search className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
                   <p className="text-foreground font-medium mb-1">No users found</p>
-                  <p className="text-muted-foreground text-sm mb-4">
-                    Try a different search term or add them manually
-                  </p>
-                  <Button
-                    onClick={() => setActiveTab("manual")}
-                    variant="outline"
-                    className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-                  >
-                    Add Manually
-                    <ArrowRight className="h-4 w-4 ml-2" />
+                  <p className="text-muted-foreground text-sm mb-4">Try a different search or add manually</p>
+                  <Button onClick={() => setActiveTab("manual")} variant="outline" className="border-primary text-primary">
+                    Add Manually <ArrowRight className="h-4 w-4 ml-2" />
                   </Button>
                 </Card>
               ) : (
                 searchResults.map((profile) => {
-                  const status = getConnectionStatus(profile.id, profile.email);
-                  const isRequesting = sendingRequest === profile.id;
+                  const status = getButtonState(profile);
 
                   return (
                     <Card 
@@ -329,6 +277,7 @@ export default function Discover() {
                       className="bg-card border-border p-4 hover:border-primary/50 transition-all"
                     >
                       <div className="flex items-center gap-4">
+                        {/* Profile Card - Photo, Name, Company */}
                         <div 
                           className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 cursor-pointer"
                           onClick={() => navigate(`/u/${profile.id}`)}
@@ -349,9 +298,16 @@ export default function Discover() {
                           className="flex-1 min-w-0 cursor-pointer"
                           onClick={() => navigate(`/u/${profile.id}`)}
                         >
-                          <p className="font-semibold text-foreground truncate">
-                            {profile.full_name}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-foreground truncate">
+                              {profile.full_name}
+                            </p>
+                            {profile.isPrivate && (
+                              <Badge variant="outline" className="text-xs border-muted-foreground/30 text-muted-foreground">
+                                Private
+                              </Badge>
+                            )}
+                          </div>
                           {profile.job_title && (
                             <p className="text-sm text-primary truncate">{profile.job_title}</p>
                           )}
@@ -363,29 +319,161 @@ export default function Discover() {
                           )}
                         </div>
                         
-                        {status === "connected" ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled
-                            className="border-green-500 text-green-500"
-                          >
+                        {/* Connection Button */}
+                        {status === 'accepted' ? (
+                          <Button variant="outline" size="sm" disabled className="border-green-500/50 text-green-500">
+                            <Check className="h-4 w-4 mr-1" />
                             Connected
+                          </Button>
+                        ) : status === 'pending' ? (
+                          <Button variant="outline" size="sm" disabled className="border-yellow-500/50 text-yellow-500">
+                            <Clock className="h-4 w-4 mr-1" />
+                            Pending
                           </Button>
                         ) : (
                           <Button
-                            onClick={() => handleSendConnectionRequest(profile)}
-                            disabled={isRequesting}
+                            onClick={() => handleSendRequest(profile)}
                             size="sm"
                             className="bg-primary text-primary-foreground hover:bg-primary/90"
                           >
-                            {isRequesting ? "..." : "Connect"}
+                            Connect
                           </Button>
                         )}
                       </div>
                     </Card>
                   );
                 })
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Connection Requests Tab */}
+          <TabsContent value="requests" className="space-y-6 mt-4">
+            {/* Incoming Requests */}
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                Incoming Requests ({incomingRequests.length})
+              </h3>
+              {requestsLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <Card key={i} className="bg-card border-border p-4">
+                      <div className="flex items-center gap-4">
+                        <Skeleton className="w-12 h-12 rounded-full" />
+                        <div className="flex-1 space-y-2">
+                          <Skeleton className="h-4 w-32" />
+                          <Skeleton className="h-3 w-24" />
+                        </div>
+                        <Skeleton className="h-9 w-20" />
+                        <Skeleton className="h-9 w-20" />
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              ) : incomingRequests.length === 0 ? (
+                <Card className="bg-card border-border p-6 text-center">
+                  <p className="text-muted-foreground">No pending requests</p>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {incomingRequests.map((request) => (
+                    <Card key={request.id} className="bg-card border-border p-4">
+                      <div className="flex items-center gap-4">
+                        <div 
+                          className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center cursor-pointer"
+                          onClick={() => navigate(`/u/${request.requester_id}`)}
+                        >
+                          {request.requester_profile?.avatar_url ? (
+                            <img 
+                              src={request.requester_profile.avatar_url} 
+                              alt={request.requester_profile.full_name}
+                              className="w-12 h-12 rounded-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-primary font-bold">
+                              {request.requester_profile?.full_name?.charAt(0).toUpperCase() || '?'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground truncate">
+                            {request.requester_profile?.full_name || 'Unknown'}
+                          </p>
+                          {request.requester_profile?.company && (
+                            <p className="text-sm text-muted-foreground truncate">
+                              {request.requester_profile.company}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => acceptRequest(request.id)}
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            onClick={() => declineRequest(request.id)}
+                            size="sm"
+                            variant="outline"
+                            className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Outgoing Requests */}
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                Sent Requests ({outgoingRequests.filter(r => r.status === 'pending').length})
+              </h3>
+              {outgoingRequests.filter(r => r.status === 'pending').length === 0 ? (
+                <Card className="bg-card border-border p-6 text-center">
+                  <p className="text-muted-foreground">No pending sent requests</p>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {outgoingRequests.filter(r => r.status === 'pending').map((request) => (
+                    <Card key={request.id} className="bg-card border-border p-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                          {request.target_profile?.avatar_url ? (
+                            <img 
+                              src={request.target_profile.avatar_url} 
+                              alt={request.target_profile.full_name}
+                              className="w-12 h-12 rounded-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-primary font-bold">
+                              {request.target_profile?.full_name?.charAt(0).toUpperCase() || '?'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground truncate">
+                            {request.target_profile?.full_name || 'Unknown'}
+                          </p>
+                          {request.target_profile?.company && (
+                            <p className="text-sm text-muted-foreground truncate">
+                              {request.target_profile.company}
+                            </p>
+                          )}
+                        </div>
+                        <Badge variant="outline" className="text-yellow-500 border-yellow-500/50">
+                          <Clock className="h-3 w-3 mr-1" />
+                          Pending
+                        </Badge>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
               )}
             </div>
           </TabsContent>
@@ -465,10 +553,10 @@ export default function Discover() {
 
               <Button
                 type="submit"
-                disabled={savingManual}
+                disabled={savingManual || !manualForm.name || !manualForm.email}
                 className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
               >
-                {savingManual ? "Adding..." : "Add Connection"}
+                {savingManual ? "Adding..." : "Add Contact"}
               </Button>
             </form>
           </TabsContent>

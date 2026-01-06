@@ -37,26 +37,20 @@ export default function Network() {
   }, []);
 
   const loadConnections = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/auth");
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("connections")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setConnections(data || []);
-    } catch (error) {
-      console.error("Error loading connections:", error);
-    } finally {
-      setLoading(false);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      navigate("/auth");
+      return;
     }
+
+    const { data } = await supabase
+      .from("connections")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    setConnections(data || []);
+    setLoading(false);
   };
 
   const handleAddConnection = () => {
