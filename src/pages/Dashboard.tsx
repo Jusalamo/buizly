@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { QRCode } from "@/components/QRCode";
 import { DashboardSkeleton } from "@/components/skeletons/ProfileCardSkeleton";
-import { Users, Calendar, TrendingUp, MapPin, Clock, ChevronRight, Filter } from "lucide-react";
+import { Users, Calendar, TrendingUp, MapPin, Clock, ChevronRight, Filter, UserCheck, UserPlus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useConnectionRequests } from "@/hooks/useConnectionRequests";
 import type { Database } from "@/integrations/supabase/types";
 import type { MeetingStatus } from "@/types/database";
 
@@ -33,7 +34,9 @@ export default function Dashboard() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [connectionFilter, setConnectionFilter] = useState<TimeFilter>("all");
   const [loading, setLoading] = useState(true);
+  const [dataReady, setDataReady] = useState(false);
   const navigate = useNavigate();
+  const { incomingRequests, acceptRequest, declineRequest } = useConnectionRequests();
 
   useEffect(() => {
     loadData();
@@ -51,39 +54,20 @@ export default function Dashboard() {
         return;
       }
 
-      // Load profile
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
+      // Parallel fetch for speed - all data loads at once
+      const [profileResult, connectionsResult, meetingsResult] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", user.id).single(),
+        supabase.from("connections").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+        supabase.from("meetings").select("*").eq("user_id", user.id).gte("meeting_date", new Date().toISOString().split('T')[0]).neq("status", "cancelled").order("meeting_date", { ascending: true }).limit(5),
+      ]);
       
-      setProfile(profileData);
-
-      // Load all connections
-      const { data: connectionsData } = await supabase
-        .from("connections")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-      
-      setAllConnections(connectionsData || []);
-
-      // Load upcoming meetings
-      const today = new Date().toISOString().split('T')[0];
-      const { data: meetingsData } = await supabase
-        .from("meetings")
-        .select("*")
-        .eq("user_id", user.id)
-        .gte("meeting_date", today)
-        .neq("status", "cancelled")
-        .order("meeting_date", { ascending: true })
-        .limit(5);
-      
-      setMeetings((meetingsData || []).map(m => ({
+      setProfile(profileResult.data);
+      setAllConnections(connectionsResult.data || []);
+      setMeetings((meetingsResult.data || []).map(m => ({
         ...m,
         status: (m.status || 'pending') as MeetingStatus
       })));
+      setDataReady(true);
     } finally {
       setLoading(false);
     }
@@ -119,7 +103,8 @@ export default function Dashboard() {
     return allConnections.filter(c => new Date(c.created_at) > weekAgo).length;
   };
 
-  if (loading) {
+  // Show skeleton only on initial load, not on re-renders
+  if (loading && !dataReady) {
     return (
       <Layout>
         <div className="max-w-4xl mx-auto p-6">
@@ -132,9 +117,30 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="max-w-4xl mx-auto p-6 space-y-6">
+        {/* Connection Requests Banner */}
+        {incomingRequests.length > 0 && (
+          <Card className="bg-primary/10 border-primary/30 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/20 rounded-full">
+                  <UserPlus className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">
+                    {incomingRequests.length} connection request{incomingRequests.length > 1 ? 's' : ''}
+                  </p>
+                  <p className="text-sm text-muted-foreground">People want to connect with you</p>
+                </div>
+              </div>
+              <Button onClick={() => navigate("/discover")} size="sm" className="bg-primary text-primary-foreground">
+                View
+              </Button>
+            </div>
+          </Card>
+        )}
+
         {/* QR Code - Centered above Welcome */}
         <div className="flex flex-col items-center space-y-6">
-          {/* QR Code */}
           <div className="bg-card border border-border rounded-2xl p-4">
             <QRCode 
               url={`${window.location.origin}/u/${profile?.id}`}
@@ -144,7 +150,6 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground text-center mt-3 font-medium">Scan to view my card</p>
           </div>
           
-          {/* Profile Picture & Welcome */}
           <div className="flex items-center gap-4">
             {profile?.avatar_url ? (
               <img 
@@ -168,7 +173,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Stats Grid - Responsive Pills */}
+        {/* Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Card className="bg-card border-border px-4 py-3 flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg">
@@ -201,7 +206,7 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Upcoming Meetings - Clickable */}
+        {/* Upcoming Meetings */}
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-foreground">Upcoming Meetings</h2>
@@ -260,7 +265,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Recent Connections with Filters */}
+        {/* Recent Connections */}
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-foreground">Recent Connections</h2>
