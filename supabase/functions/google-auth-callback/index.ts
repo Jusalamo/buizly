@@ -6,19 +6,69 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Rate limiting map (in production, use Redis or similar)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(key: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  const existing = rateLimitMap.get(key);
+  
+  if (!existing || now > existing.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  
+  if (existing.count >= limit) return false;
+  
+  existing.count++;
+  return true;
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Get IP for rate limiting
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || 
+               req.headers.get("cf-connecting-ip") || 
+               "unknown";
+
+    // Rate limit: 10 attempts per hour per IP
+    if (!checkRateLimit(ip, 10, 3600000)) {
+      console.warn("[google-auth-callback] Rate limit exceeded for IP:", ip.substring(0, 10) + "...");
+      return new Response(
+        JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+        { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     const { code, redirectUri } = await req.json();
     
+    if (!code || typeof code !== 'string') {
+      return new Response(
+        JSON.stringify({ error: "Authorization code is required" }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    if (!redirectUri || typeof redirectUri !== 'string') {
+      return new Response(
+        JSON.stringify({ error: "Redirect URI is required" }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     const clientId = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID");
     const clientSecret = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET");
     
     if (!clientId || !clientSecret) {
-      throw new Error("Google OAuth credentials not configured");
+      console.error("[google-auth-callback] OAuth credentials not configured");
+      return new Response(
+        JSON.stringify({ error: "OAuth configuration error" }),
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
 
     // Exchange code for tokens
@@ -36,7 +86,11 @@ serve(async (req: Request) => {
 
     if (!tokenResponse.ok) {
       const error = await tokenResponse.text();
-      throw new Error(`Token exchange failed: ${error}`);
+      console.error("[google-auth-callback] Token exchange failed:", error);
+      return new Response(
+        JSON.stringify({ error: "Failed to exchange authorization code" }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
 
     const tokens = await tokenResponse.json();
@@ -44,7 +98,10 @@ serve(async (req: Request) => {
     // Get user from auth header
     const authHeader = req.headers.get("authorization");
     if (!authHeader) {
-      throw new Error("No authorization header");
+      return new Response(
+        JSON.stringify({ error: "Authorization required" }),
+        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
 
     const supabase = createClient(
@@ -57,7 +114,10 @@ serve(async (req: Request) => {
     );
 
     if (userError || !user) {
-      throw new Error("Invalid user token");
+      return new Response(
+        JSON.stringify({ error: "Invalid or expired token" }),
+        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
 
     // Store refresh token in user_settings
@@ -71,8 +131,14 @@ serve(async (req: Request) => {
       .eq("user_id", user.id);
 
     if (updateError) {
-      throw updateError;
+      console.error("[google-auth-callback] Update error:", updateError);
+      return new Response(
+        JSON.stringify({ error: "Failed to save connection" }),
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
+
+    console.log("[google-auth-callback] Successfully connected Google Calendar for user:", user.id);
 
     return new Response(
       JSON.stringify({ 
@@ -85,9 +151,9 @@ serve(async (req: Request) => {
       }
     );
   } catch (error: any) {
-    console.error("Error in Google auth callback:", error);
+    console.error("[google-auth-callback] Error:", error.message);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: "An unexpected error occurred" }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,

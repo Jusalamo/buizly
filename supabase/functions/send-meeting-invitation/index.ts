@@ -19,6 +19,39 @@ interface MeetingInvitationRequest {
   organizerEmail: string;
 }
 
+// Rate limiting map (in production, use Redis or similar)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(key: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  const existing = rateLimitMap.get(key);
+  
+  if (!existing || now > existing.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  
+  if (existing.count >= limit) return false;
+  
+  existing.count++;
+  return true;
+}
+
+// HTML escape utility to prevent injection
+const escapeHtml = (str: string): string => {
+  if (!str) return '';
+  return str.replace(/[&<>"']/g, (char) => {
+    const entities: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    };
+    return entities[char] || char;
+  });
+};
+
 const handler = async (req: Request): Promise<Response> => {
   console.log("[send-meeting-invitation] Request received");
 
@@ -35,18 +68,33 @@ const handler = async (req: Request): Promise<Response> => {
     // Verify auth
     const authHeader = req.headers.get("authorization");
     if (!authHeader) {
-      throw new Error("No authorization header");
+      return new Response(
+        JSON.stringify({ error: "Authorization required" }),
+        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
 
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
     
     if (authError || !user) {
-      throw new Error("Unauthorized");
+      return new Response(
+        JSON.stringify({ error: "Invalid or expired token" }),
+        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    // Rate limit: 20 invitations per hour per user
+    if (!checkRateLimit(user.id, 20, 3600000)) {
+      console.warn("[send-meeting-invitation] Rate limit exceeded for user:", user.id);
+      return new Response(
+        JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+        { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
 
     const invitation: MeetingInvitationRequest = await req.json();
-    console.log(`[send-meeting-invitation] Sending to ${invitation.participantEmail}`);
+    console.log(`[send-meeting-invitation] Sending to ${invitation.participantEmail} by user ${user.id}`);
 
     // Use the production URL for better email deliverability
     const appUrl = Deno.env.get("APP_URL") || 'https://preview--buizly-digital-business-card.lovable.app';
@@ -58,8 +106,15 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     // Include participant email in the response links for tracking
-    const acceptLink = `${appUrl}/meeting-response/${invitation.meetingId}?action=accept&email=${encodeURIComponent(invitation.participantEmail)}`;
-    const declineLink = `${appUrl}/meeting-response/${invitation.meetingId}?action=decline&email=${encodeURIComponent(invitation.participantEmail)}`;
+    const acceptLink = `${appUrl}/meeting-response/${escapeHtml(invitation.meetingId)}?action=accept&email=${encodeURIComponent(invitation.participantEmail)}`;
+    const declineLink = `${appUrl}/meeting-response/${escapeHtml(invitation.meetingId)}?action=decline&email=${encodeURIComponent(invitation.participantEmail)}`;
+
+    // Escape all user-provided content
+    const escapedTitle = escapeHtml(invitation.meetingTitle);
+    const escapedOrganizerName = escapeHtml(invitation.organizerName);
+    const escapedOrganizerEmail = escapeHtml(invitation.organizerEmail);
+    const escapedLocation = escapeHtml(invitation.meetingLocation || '');
+    const escapedDescription = escapeHtml(invitation.meetingDescription || '');
 
     // Email HTML optimized for deliverability and client compatibility
     const emailHtml = `
@@ -69,7 +124,7 @@ const handler = async (req: Request): Promise<Response> => {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="x-apple-disable-message-reformatting">
-        <title>Meeting Invitation from ${invitation.organizerName}</title>
+        <title>Meeting Invitation from ${escapedOrganizerName}</title>
       </head>
       <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f4;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f4f4f4;">
@@ -87,7 +142,7 @@ const handler = async (req: Request): Promise<Response> => {
                 <tr>
                   <td style="padding: 0 32px;">
                     <h2 style="margin: 0 0 8px 0; font-size: 24px; color: #1a1a1a;">You're Invited!</h2>
-                    <p style="margin: 0; font-size: 14px; color: #666666;">${invitation.organizerName} has invited you to a meeting</p>
+                    <p style="margin: 0; font-size: 14px; color: #666666;">${escapedOrganizerName} has invited you to a meeting</p>
                   </td>
                 </tr>
                 
@@ -101,7 +156,7 @@ const handler = async (req: Request): Promise<Response> => {
                             <tr>
                               <td style="padding: 8px 0;">
                                 <span style="display: inline-block; width: 80px; font-size: 12px; color: #888888; text-transform: uppercase;">Title</span>
-                                <span style="font-size: 14px; color: #1a1a1a;">${invitation.meetingTitle}</span>
+                                <span style="font-size: 14px; color: #1a1a1a;">${escapedTitle}</span>
                               </td>
                             </tr>
                             <tr>
@@ -113,22 +168,22 @@ const handler = async (req: Request): Promise<Response> => {
                             <tr>
                               <td style="padding: 8px 0;">
                                 <span style="display: inline-block; width: 80px; font-size: 12px; color: #888888; text-transform: uppercase;">Time</span>
-                                <span style="font-size: 14px; color: #1a1a1a;">${invitation.meetingTime}</span>
+                                <span style="font-size: 14px; color: #1a1a1a;">${escapeHtml(invitation.meetingTime)}</span>
                               </td>
                             </tr>
-                            ${invitation.meetingLocation ? `
+                            ${escapedLocation ? `
                             <tr>
                               <td style="padding: 8px 0;">
                                 <span style="display: inline-block; width: 80px; font-size: 12px; color: #888888; text-transform: uppercase;">Location</span>
-                                <span style="font-size: 14px; color: #1a1a1a;">${invitation.meetingLocation}</span>
+                                <span style="font-size: 14px; color: #1a1a1a;">${escapedLocation}</span>
                               </td>
                             </tr>
                             ` : ''}
-                            ${invitation.meetingDescription ? `
+                            ${escapedDescription ? `
                             <tr>
                               <td style="padding: 8px 0;">
                                 <span style="display: inline-block; width: 80px; font-size: 12px; color: #888888; text-transform: uppercase;">Details</span>
-                                <span style="font-size: 14px; color: #1a1a1a;">${invitation.meetingDescription}</span>
+                                <span style="font-size: 14px; color: #1a1a1a;">${escapedDescription}</span>
                               </td>
                             </tr>
                             ` : ''}
@@ -149,12 +204,12 @@ const handler = async (req: Request): Promise<Response> => {
                             <tr>
                               <td style="vertical-align: middle; padding-right: 12px;">
                                 <div style="width: 40px; height: 40px; border-radius: 50%; background-color: #00CC3D; color: #000000; font-weight: bold; font-size: 16px; text-align: center; line-height: 40px;">
-                                  ${invitation.organizerName.charAt(0).toUpperCase()}
+                                  ${escapedOrganizerName.charAt(0).toUpperCase()}
                                 </div>
                               </td>
                               <td style="vertical-align: middle;">
-                                <div style="font-weight: 600; color: #1a1a1a; font-size: 14px;">${invitation.organizerName}</div>
-                                <div style="font-size: 12px; color: #888888;">${invitation.organizerEmail}</div>
+                                <div style="font-weight: 600; color: #1a1a1a; font-size: 14px;">${escapedOrganizerName}</div>
+                                <div style="font-size: 12px; color: #888888;">${escapedOrganizerEmail}</div>
                               </td>
                             </tr>
                           </table>
@@ -240,7 +295,7 @@ const handler = async (req: Request): Promise<Response> => {
       body: JSON.stringify({
         from: "Buizly <onboarding@resend.dev>",
         to: [invitation.participantEmail],
-        subject: `Meeting Invitation: ${invitation.meetingTitle}`,
+        subject: `Meeting Invitation: ${escapedTitle}`,
         html: emailHtml,
         headers: {
           "X-Entity-Ref-ID": invitation.meetingId,
