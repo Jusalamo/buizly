@@ -1,21 +1,15 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { QRCode } from "@/components/QRCode";
-import { DashboardSkeleton } from "@/components/skeletons/ProfileCardSkeleton";
-import { Users, Calendar, TrendingUp, MapPin, Clock, ChevronRight, Filter, UserCheck, UserPlus } from "lucide-react";
+import { Users, Calendar, TrendingUp, MapPin, Clock, ChevronRight, Filter, UserPlus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
-import type { Database } from "@/integrations/supabase/types";
+import { useAppCache } from "@/hooks/useAppCache";
 import type { MeetingStatus } from "@/types/database";
-
-type Profile = Database["public"]["Tables"]["profiles"]["Row"];
-type Connection = Database["public"]["Tables"]["connections"]["Row"];
-type Meeting = Database["public"]["Tables"]["meetings"]["Row"] & { status?: MeetingStatus };
 
 const statusColors: Record<string, string> = {
   pending: "bg-yellow-500/20 text-yellow-400",
@@ -28,52 +22,25 @@ const statusColors: Record<string, string> = {
 type TimeFilter = "week" | "month" | "year" | "all";
 
 export default function Dashboard() {
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [allConnections, setAllConnections] = useState<Connection[]>([]);
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [connectionFilter, setConnectionFilter] = useState<TimeFilter>("all");
-  const [loading, setLoading] = useState(true);
-  const [dataReady, setDataReady] = useState(false);
   const navigate = useNavigate();
-  const { incomingRequests, acceptRequest, declineRequest } = useConnectionRequests();
+  const { incomingRequests } = useConnectionRequests();
+  const { profile, connections: allConnections, meetings: allMeetings, loading } = useAppCache();
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    filterConnections();
-  }, [connectionFilter, allConnections]);
-
-  const loadData = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/auth");
-        return;
-      }
-
-      // Parallel fetch for speed - all data loads at once
-      const [profileResult, connectionsResult, meetingsResult] = await Promise.all([
-        supabase.from("profiles").select("*").eq("id", user.id).single(),
-        supabase.from("connections").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
-        supabase.from("meetings").select("*").eq("user_id", user.id).gte("meeting_date", new Date().toISOString().split('T')[0]).neq("status", "cancelled").order("meeting_date", { ascending: true }).limit(5),
-      ]);
-      
-      setProfile(profileResult.data);
-      setAllConnections(connectionsResult.data || []);
-      setMeetings((meetingsResult.data || []).map(m => ({
+  // Filter upcoming meetings (not cancelled, future dates)
+  const upcomingMeetings = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return allMeetings
+      .filter(m => m.meeting_date >= today && m.status !== 'cancelled')
+      .slice(0, 5)
+      .map(m => ({
         ...m,
         status: (m.status || 'pending') as MeetingStatus
-      })));
-      setDataReady(true);
-    } finally {
-      setLoading(false);
-    }
-  };
+      }));
+  }, [allMeetings]);
 
-  const filterConnections = () => {
+  // Filter connections based on time filter
+  const filteredConnections = useMemo(() => {
     const now = new Date();
     let filtered = [...allConnections];
     
@@ -94,21 +61,27 @@ export default function Dashboard() {
         filtered = allConnections;
     }
     
-    setConnections(filtered.slice(0, 5));
-  };
+    return filtered.slice(0, 5);
+  }, [allConnections, connectionFilter]);
 
-  const getThisWeekCount = () => {
+  const getThisWeekCount = useMemo(() => {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     return allConnections.filter(c => new Date(c.created_at) > weekAgo).length;
-  };
+  }, [allConnections]);
 
-  // Show skeleton only on initial load, not on re-renders
-  if (loading && !dataReady) {
+  // Immediate render with cached data - no skeleton on tab switch
+  // Only show minimal loading state on first ever load
+  if (loading && !profile) {
     return (
       <Layout>
-        <div className="max-w-4xl mx-auto p-6">
-          <DashboardSkeleton />
+        <div className="max-w-4xl mx-auto p-6 space-y-6 animate-pulse">
+          <div className="flex flex-col items-center space-y-6">
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <div className="w-[140px] h-[140px] bg-secondary rounded-lg" />
+            </div>
+            <div className="h-8 w-48 bg-secondary rounded" />
+          </div>
         </div>
       </Layout>
     );
@@ -190,7 +163,7 @@ export default function Dashboard() {
               <Calendar className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <p className="text-lg font-bold text-foreground">{meetings.length}</p>
+              <p className="text-lg font-bold text-foreground">{upcomingMeetings.length}</p>
               <p className="text-xs text-muted-foreground">Upcoming</p>
             </div>
           </Card>
@@ -200,7 +173,7 @@ export default function Dashboard() {
               <TrendingUp className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <p className="text-lg font-bold text-foreground">{getThisWeekCount()}</p>
+              <p className="text-lg font-bold text-foreground">{getThisWeekCount}</p>
               <p className="text-xs text-muted-foreground">This Week</p>
             </div>
           </Card>
@@ -215,7 +188,7 @@ export default function Dashboard() {
             </Button>
           </div>
           
-          {meetings.length === 0 ? (
+          {upcomingMeetings.length === 0 ? (
             <Card className="bg-card border-border p-6 text-center">
               <p className="text-muted-foreground">No upcoming meetings</p>
               <Button onClick={() => navigate("/schedule")} className="mt-4 bg-primary text-primary-foreground">
@@ -224,7 +197,7 @@ export default function Dashboard() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {meetings.map((meeting) => (
+              {upcomingMeetings.map((meeting) => (
                 <Card
                   key={meeting.id}
                   className="bg-card border-border p-4 cursor-pointer hover:bg-card/80 hover:border-primary/50 transition-all"
@@ -285,7 +258,7 @@ export default function Dashboard() {
             </div>
           </div>
           
-          {connections.length === 0 ? (
+          {filteredConnections.length === 0 ? (
             <Card className="bg-card border-border p-6 text-center">
               <p className="text-muted-foreground">
                 {connectionFilter !== "all" ? "No connections in this period" : "No connections yet"}
@@ -296,7 +269,7 @@ export default function Dashboard() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {connections.map((connection) => (
+              {filteredConnections.map((connection) => (
                 <Card
                   key={connection.id}
                   className="bg-card border-border p-4 cursor-pointer hover:bg-card/80 hover:border-primary/50 transition-all"

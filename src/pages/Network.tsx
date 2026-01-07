@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
@@ -13,16 +13,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { ConnectionLimitBadge } from "@/components/ConnectionLimitBadge";
-import { NetworkSkeleton } from "@/components/skeletons/PageSkeletons";
-import type { Database } from "@/integrations/supabase/types";
-
-type Connection = Database["public"]["Tables"]["connections"]["Row"];
+import { useAppCache, invalidateAppCache } from "@/hooks/useAppCache";
 
 type DateFilter = "all" | "week" | "month" | "year";
 
 export default function Network() {
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
@@ -31,27 +26,7 @@ export default function Network() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { canAddConnection, getCurrentPlan } = useSubscription();
-
-  useEffect(() => {
-    loadConnections();
-  }, []);
-
-  const loadConnections = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      navigate("/auth");
-      return;
-    }
-
-    const { data } = await supabase
-      .from("connections")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
-
-    setConnections(data || []);
-    setLoading(false);
-  };
+  const { connections, loading } = useAppCache();
 
   const handleAddConnection = () => {
     if (!canAddConnection()) {
@@ -108,7 +83,9 @@ export default function Network() {
 
       if (error) throw error;
 
-      setConnections(prev => prev.filter(c => c.id !== deleteId));
+      // Refresh the cache
+      invalidateAppCache();
+      
       toast({
         title: "Connection removed",
         description: "The connection and related meetings have been deleted",
@@ -177,10 +154,19 @@ export default function Network() {
 
   const isFree = getCurrentPlan() === "free";
 
-  if (loading) {
+  // Only show minimal loading on first load with no data
+  if (loading && connections.length === 0) {
     return (
       <Layout>
-        <NetworkSkeleton />
+        <div className="max-w-4xl mx-auto p-6 space-y-6 animate-pulse">
+          <div className="h-8 w-32 bg-secondary rounded" />
+          <div className="h-10 bg-secondary rounded" />
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-20 bg-secondary rounded-lg" />
+            ))}
+          </div>
+        </div>
       </Layout>
     );
   }

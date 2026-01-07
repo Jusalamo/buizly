@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { SplashScreen } from "@/components/SplashScreen";
+import { initializeAppCache } from "@/hooks/useAppCache";
 import Dashboard from "./pages/Dashboard";
 import Network from "./pages/Network";
 import Capture from "./pages/Capture";
@@ -27,6 +28,9 @@ import Analytics from "./pages/Analytics";
 import Subscription from "./pages/Subscription";
 import Discover from "./pages/Discover";
 import NotFound from "./pages/NotFound";
+
+// Initialize cache immediately on app load
+initializeAppCache();
 
 const queryClient = new QueryClient();
 
