@@ -11,6 +11,30 @@ interface TrackViewRequest {
   referrer?: string;
 }
 
+// Rate limiting map (in production, use Redis or similar)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(key: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  const existing = rateLimitMap.get(key);
+  
+  if (!existing || now > existing.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  
+  if (existing.count >= limit) return false;
+  
+  existing.count++;
+  return true;
+}
+
+// Validate UUID format
+function validateUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
+
 const handler = async (req: Request): Promise<Response> => {
   console.log("[track-profile-view] Request received");
 
@@ -19,6 +43,20 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
+    // Get IP for rate limiting
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || 
+               req.headers.get("cf-connecting-ip") || 
+               "unknown";
+
+    // Rate limit: 100 views per hour per IP
+    if (!checkRateLimit(ip, 100, 3600000)) {
+      console.warn("[track-profile-view] Rate limit exceeded for IP:", ip.substring(0, 10) + "...");
+      return new Response(
+        JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+        { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
@@ -26,8 +64,11 @@ const handler = async (req: Request): Promise<Response> => {
 
     const { profileId, referrer }: TrackViewRequest = await req.json();
 
-    if (!profileId) {
-      throw new Error("Profile ID is required");
+    if (!profileId || !validateUUID(profileId)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid profile ID" }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
 
     // Get device info from user agent
@@ -42,11 +83,6 @@ const handler = async (req: Request): Promise<Response> => {
     // Get approximate location from IP (using CF headers if available)
     const cfCountry = req.headers.get("cf-ipcountry");
     const location = cfCountry || "Unknown";
-
-    // Hash the IP for privacy
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || 
-               req.headers.get("cf-connecting-ip") || 
-               "unknown";
     
     // Simple hash for privacy
     const ipHash = await crypto.subtle.digest(
@@ -59,6 +95,9 @@ const handler = async (req: Request): Promise<Response> => {
         .substring(0, 16);
     });
 
+    // Sanitize referrer (limit length, basic validation)
+    const sanitizedReferrer = referrer ? referrer.substring(0, 500) : null;
+
     // Insert the view record
     const { error } = await supabaseClient
       .from("profile_views")
@@ -67,7 +106,7 @@ const handler = async (req: Request): Promise<Response> => {
         viewer_ip_hash: ipHash,
         viewer_location: location,
         viewer_device: device,
-        viewer_referrer: referrer || null,
+        viewer_referrer: sanitizedReferrer,
       });
 
     if (error) {
