@@ -14,6 +14,7 @@ import { useMeetings } from "@/hooks/useMeetings";
 import { ContactSearchModal } from "@/components/ContactSearchModal";
 import { Loader2, MapPin, Users, Plus, X, Search } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
+import { useAppCache } from "@/hooks/useAppCache";
 
 type Connection = Database["public"]["Tables"]["connections"]["Row"];
 
@@ -30,6 +31,15 @@ interface Participant {
 export default function Schedule() {
   const [searchParams] = useSearchParams();
   const connectionId = searchParams.get("connection");
+  const { isAuthenticated, initialized } = useAppCache();
+  const navigate = useNavigate();
+  
+  // Redirect to auth if not authenticated
+  useEffect(() => {
+    if (initialized && !isAuthenticated) {
+      navigate("/auth", { replace: true });
+    }
+  }, [initialized, isAuthenticated, navigate]);
   
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedTime, setSelectedTime] = useState("");
@@ -43,9 +53,9 @@ export default function Schedule() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [showContactSearch, setShowContactSearch] = useState(false);
   
-  const navigate = useNavigate();
   const { toast } = useToast();
   const { createMeeting } = useMeetings();
+  
 
   useEffect(() => {
     loadConnections();

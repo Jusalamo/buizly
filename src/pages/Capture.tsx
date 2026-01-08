@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
@@ -13,12 +13,22 @@ import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { ConnectionLimitBadge } from "@/components/ConnectionLimitBadge";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { Mic, MicOff, Play, Pause, Trash2, Clock } from "lucide-react";
+import { useAppCache } from "@/hooks/useAppCache";
 
 export default function Capture() {
+  const { isAuthenticated, initialized } = useAppCache();
+  const navigate = useNavigate();
+  
+  // Redirect to auth if not authenticated
+  useEffect(() => {
+    if (initialized && !isAuthenticated) {
+      navigate("/auth", { replace: true });
+    }
+  }, [initialized, isAuthenticated, navigate]);
+
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
-  const navigate = useNavigate();
   const { toast } = useToast();
   const { canAddConnection, incrementConnectionCount, getConnectionsRemaining, getCurrentPlan } = useSubscription();
 

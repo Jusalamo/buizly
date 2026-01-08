@@ -18,6 +18,7 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { LinkedInImport } from "@/components/LinkedInImport";
 import { CalendarSync } from "@/components/CalendarSync";
 import { BusinessCardCustomizer } from "@/components/BusinessCardCustomizer";
+import { invalidateAppCache } from "@/hooks/useAppCache";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -41,7 +42,8 @@ export default function Settings() {
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
-      navigate("/auth");
+      // Cache will be cleared automatically via auth state listener
+      navigate("/auth", { replace: true });
       toast({
         title: "Logged out",
         description: "You have been successfully logged out",

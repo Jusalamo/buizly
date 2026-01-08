@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
@@ -26,7 +26,14 @@ export default function Network() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { canAddConnection, getCurrentPlan } = useSubscription();
-  const { connections, loading } = useAppCache();
+  const { connections, loading, isAuthenticated, initialized } = useAppCache();
+
+  // Redirect to auth if not authenticated
+  useEffect(() => {
+    if (initialized && !isAuthenticated) {
+      navigate("/auth", { replace: true });
+    }
+  }, [initialized, isAuthenticated, navigate]);
 
   const handleAddConnection = () => {
     if (!canAddConnection()) {

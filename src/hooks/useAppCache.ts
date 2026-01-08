@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -13,6 +13,7 @@ interface AppCache {
   userId: string | null;
   initialized: boolean;
   lastFetched: number;
+  isAuthenticated: boolean;
 }
 
 // Global singleton cache - survives component unmounts and re-renders
@@ -23,13 +24,27 @@ const globalCache: AppCache = {
   userId: null,
   initialized: false,
   lastFetched: 0,
+  isAuthenticated: false,
 };
 
-const CACHE_TTL = 60000; // 60 seconds - longer TTL for better perceived performance
+const CACHE_TTL = 60000; // 60 seconds
 const listeners = new Set<() => void>();
+let authListenerSetup = false;
 
 function notifyListeners() {
   listeners.forEach(listener => listener());
+}
+
+// Clear cache completely
+function clearCache() {
+  globalCache.profile = null;
+  globalCache.connections = [];
+  globalCache.meetings = [];
+  globalCache.userId = null;
+  globalCache.initialized = true;
+  globalCache.lastFetched = 0;
+  globalCache.isAuthenticated = false;
+  notifyListeners();
 }
 
 // Background refresh - doesn't block UI
@@ -44,14 +59,12 @@ async function refreshCache(force = false) {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      globalCache.profile = null;
-      globalCache.connections = [];
-      globalCache.meetings = [];
-      globalCache.userId = null;
-      globalCache.initialized = true;
-      notifyListeners();
+      clearCache();
       return;
     }
+
+    // User is authenticated
+    globalCache.isAuthenticated = true;
 
     // Only refetch if user changed or cache is stale
     if (globalCache.userId === user.id && !force && globalCache.initialized) {
@@ -78,6 +91,26 @@ async function refreshCache(force = false) {
   }
 }
 
+// Setup auth state listener - only once
+function setupAuthListener() {
+  if (authListenerSetup) return;
+  authListenerSetup = true;
+
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN' && session?.user) {
+      // User just signed in - force refresh with their data
+      globalCache.userId = null; // Reset to force refetch
+      setTimeout(() => refreshCache(true), 0);
+    } else if (event === 'SIGNED_OUT') {
+      // User signed out - clear everything
+      clearCache();
+    } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+      // Token refreshed, user still logged in
+      globalCache.isAuthenticated = true;
+    }
+  });
+}
+
 export function useAppCache() {
   const [, forceUpdate] = useState({});
   const mountedRef = useRef(true);
@@ -91,6 +124,9 @@ export function useAppCache() {
       }
     };
     listeners.add(listener);
+
+    // Setup auth listener
+    setupAuthListener();
 
     // Initial load if not cached
     if (!globalCache.initialized) {
@@ -113,12 +149,15 @@ export function useAppCache() {
     meetings: globalCache.meetings,
     loading: !globalCache.initialized,
     initialized: globalCache.initialized,
+    isAuthenticated: globalCache.isAuthenticated,
+    userId: globalCache.userId,
     refetch: invalidate,
   };
 }
 
 // Pre-warm cache on app load
 export function initializeAppCache() {
+  setupAuthListener();
   refreshCache();
 }
 

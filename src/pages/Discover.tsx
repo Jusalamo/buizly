@@ -12,11 +12,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
 import { useProfileSearch, type SearchableProfile } from "@/hooks/useProfileSearch";
+import { useAppCache } from "@/hooks/useAppCache";
 
 export default function Discover() {
+  const { isAuthenticated, initialized } = useAppCache();
+  const navigate = useNavigate();
+  
+  // Redirect to auth if not authenticated
+  useEffect(() => {
+    if (initialized && !isAuthenticated) {
+      navigate("/auth", { replace: true });
+    }
+  }, [initialized, isAuthenticated, navigate]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"search" | "requests" | "manual">("search");
-  const navigate = useNavigate();
   const { toast } = useToast();
   
   const { 
