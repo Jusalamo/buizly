@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,16 +7,30 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 import { loginSchema, signupSchema } from "@/lib/validationSchemas";
+import { invalidateAppCache } from "@/hooks/useAppCache";
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Check if user is already authenticated
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        navigate("/", { replace: true });
+      }
+      setCheckingAuth(false);
+    };
+    checkAuth();
+  }, [navigate]);
 
   const validateForm = () => {
     setErrors({});
@@ -63,7 +77,9 @@ export default function Auth() {
           password,
         });
         if (error) throw error;
-        navigate("/");
+        // Force cache refresh with new user data
+        invalidateAppCache();
+        navigate("/", { replace: true });
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -72,14 +88,17 @@ export default function Auth() {
             data: {
               full_name: fullName,
             },
+            emailRedirectTo: `${window.location.origin}/`,
           },
         });
         if (error) throw error;
+        // Force cache refresh with new user data
+        invalidateAppCache();
         toast({
           title: "Success!",
           description: "Account created successfully. Welcome to Buizly!",
         });
-        navigate("/");
+        navigate("/", { replace: true });
       }
     } catch (error: any) {
       toast({
@@ -91,6 +110,15 @@ export default function Auth() {
       setLoading(false);
     }
   };
+
+  // Show nothing while checking auth
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">

@@ -1,52 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Mail, Phone, Globe, Building, Briefcase, Share2, Edit, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ProfileSkeleton } from "@/components/skeletons/PageSkeletons";
-import type { Database } from "@/integrations/supabase/types";
-
-type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+import { useAppCache } from "@/hooks/useAppCache";
 
 export default function Profile() {
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { profile, loading, isAuthenticated, initialized } = useAppCache();
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  // Redirect to auth if not authenticated
   useEffect(() => {
-    loadProfile();
-  }, []);
-
-  const loadProfile = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/auth");
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-
-      if (error) throw error;
-      setProfile(data);
-    } catch (error: any) {
-      toast({
-        title: "Error loading profile",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+    if (initialized && !isAuthenticated) {
+      navigate("/auth", { replace: true });
     }
-  };
+  }, [initialized, isAuthenticated, navigate]);
 
   const handleShare = async () => {
     if (!profile) return;
@@ -68,12 +40,18 @@ export default function Profile() {
     }
   };
 
-  if (loading) {
+  // Only show skeleton on first load before cache is ready
+  if (!initialized) {
     return (
       <Layout>
         <ProfileSkeleton />
       </Layout>
     );
+  }
+
+  // Don't render if not authenticated
+  if (!isAuthenticated) {
+    return null;
   }
 
   if (!profile) {
@@ -115,11 +93,20 @@ export default function Profile() {
         {/* Profile Card */}
         <Card className="bg-card border-border p-6">
           <div className="flex items-start gap-4">
-            <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 border-2 border-primary">
-              <span className="text-primary text-3xl font-bold">
-                {profile.full_name?.charAt(0)?.toUpperCase() || 'U'}
-              </span>
-            </div>
+            {profile.avatar_url ? (
+              <img 
+                src={profile.avatar_url} 
+                alt={profile.full_name}
+                className="w-20 h-20 rounded-full object-cover flex-shrink-0 border-2 border-primary"
+                loading="eager"
+              />
+            ) : (
+              <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 border-2 border-primary">
+                <span className="text-primary text-3xl font-bold">
+                  {profile.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                </span>
+              </div>
+            )}
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-foreground">{profile.full_name}</h2>
               {profile.job_title && (

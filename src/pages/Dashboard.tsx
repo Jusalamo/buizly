@@ -25,7 +25,14 @@ export default function Dashboard() {
   const [connectionFilter, setConnectionFilter] = useState<TimeFilter>("all");
   const navigate = useNavigate();
   const { incomingRequests } = useConnectionRequests();
-  const { profile, connections: allConnections, meetings: allMeetings, loading } = useAppCache();
+  const { profile, connections: allConnections, meetings: allMeetings, loading, isAuthenticated, initialized } = useAppCache();
+
+  // Redirect to auth if not authenticated (after cache is initialized)
+  useEffect(() => {
+    if (initialized && !isAuthenticated && !profile) {
+      navigate("/auth", { replace: true });
+    }
+  }, [initialized, isAuthenticated, profile, navigate]);
 
   // Filter upcoming meetings (not cancelled, future dates)
   const upcomingMeetings = useMemo(() => {
@@ -70,9 +77,8 @@ export default function Dashboard() {
     return allConnections.filter(c => new Date(c.created_at) > weekAgo).length;
   }, [allConnections]);
 
-  // Immediate render with cached data - no skeleton on tab switch
-  // Only show minimal loading state on first ever load
-  if (loading && !profile) {
+  // Show minimal loading only on first load before auth check
+  if (!initialized) {
     return (
       <Layout>
         <div className="max-w-4xl mx-auto p-6 space-y-6 animate-pulse">
@@ -85,6 +91,11 @@ export default function Dashboard() {
         </div>
       </Layout>
     );
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (!isAuthenticated && !profile) {
+    return null;
   }
 
   return (
