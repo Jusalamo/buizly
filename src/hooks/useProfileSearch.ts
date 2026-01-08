@@ -8,14 +8,18 @@ export interface SearchableProfile extends Profile {
   isPrivate: boolean;
 }
 
+// Cache search results for instant display
+const searchCache = new Map<string, SearchableProfile[]>();
+
 export function useProfileSearch() {
   const [results, setResults] = useState<SearchableProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastQueryRef = useRef<string>('');
+  const pendingQueryRef = useRef<string | null>(null);
 
-  // Get current user on mount
+  // Get current user on mount - immediate
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setCurrentUserId(user.id);
@@ -29,44 +33,67 @@ export function useProfileSearch() {
     if (trimmedQuery.length < 1) {
       setResults([]);
       setLoading(false);
+      lastQueryRef.current = '';
       return;
     }
 
     // Skip if same query
     if (trimmedQuery === lastQueryRef.current) return;
-    lastQueryRef.current = trimmedQuery;
+    
+    // Check cache first - instant results
+    const cached = searchCache.get(trimmedQuery);
+    if (cached) {
+      setResults(cached);
+      lastQueryRef.current = trimmedQuery;
+      return;
+    }
 
     // Cancel previous request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     abortControllerRef.current = new AbortController();
+    pendingQueryRef.current = trimmedQuery;
 
     setLoading(true);
 
     try {
-      if (!currentUserId) {
+      let userId = currentUserId;
+      if (!userId) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
           setLoading(false);
           return;
         }
-        setCurrentUserId(user.id);
+        userId = user.id;
+        setCurrentUserId(userId);
+      }
+
+      // Check if this query was superseded
+      if (pendingQueryRef.current !== trimmedQuery) {
+        return;
       }
 
       // Search profiles by name OR email - always return results regardless of privacy
       const { data: profiles, error } = await supabase
         .from('profiles')
         .select('id, full_name, avatar_url, job_title, company, email')
-        .neq('id', currentUserId!)
+        .neq('id', userId)
         .or(`full_name.ilike.%${trimmedQuery}%,email.ilike.%${trimmedQuery}%`)
         .order('full_name', { ascending: true })
         .limit(3); // Only first 3 closest matches
 
       if (error) throw error;
 
+      // Check if this query was superseded
+      if (pendingQueryRef.current !== trimmedQuery) {
+        return;
+      }
+
       if (!profiles || profiles.length === 0) {
         setResults([]);
+        lastQueryRef.current = trimmedQuery;
+        searchCache.set(trimmedQuery, []);
         setLoading(false);
         return;
       }
@@ -76,6 +103,11 @@ export function useProfileSearch() {
         .from('user_settings')
         .select('user_id, profile_visibility')
         .in('user_id', profiles.map(p => p.id));
+
+      // Check if this query was superseded
+      if (pendingQueryRef.current !== trimmedQuery) {
+        return;
+      }
 
       const visibilityMap = new Map(settings?.map(s => [s.user_id, s.profile_visibility]) || []);
 
@@ -100,18 +132,31 @@ export function useProfileSearch() {
       });
 
       setResults(searchableProfiles);
+      lastQueryRef.current = trimmedQuery;
+      
+      // Cache results for instant future display
+      searchCache.set(trimmedQuery, searchableProfiles);
+      
+      // Limit cache size
+      if (searchCache.size > 50) {
+        const firstKey = searchCache.keys().next().value;
+        if (firstKey) searchCache.delete(firstKey);
+      }
     } catch (error: any) {
       if (error.name !== 'AbortError') {
         console.error('Search error:', error);
       }
     } finally {
-      setLoading(false);
+      if (pendingQueryRef.current === trimmedQuery) {
+        setLoading(false);
+      }
     }
   }, [currentUserId]);
 
   const clearResults = useCallback(() => {
     setResults([]);
     lastQueryRef.current = '';
+    pendingQueryRef.current = null;
   }, []);
 
   return {
@@ -120,4 +165,10 @@ export function useProfileSearch() {
     search,
     clearResults,
   };
+}
+
+// Pre-warm search with common patterns (optional - improves UX)
+export function preloadSearchCache() {
+  // This would be called on app load to warm up common searches
+  // Currently disabled to avoid unnecessary queries
 }

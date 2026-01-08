@@ -42,17 +42,13 @@ export default function Discover() {
   });
   const [savingManual, setSavingManual] = useState(false);
 
-  // Real-time search as user types - debounced
+  // INSTANT search as user types - no debounce for immediate feedback
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchQuery.trim().length >= 1) {
-        search(searchQuery);
-      } else {
-        clearResults();
-      }
-    }, 150); // Fast 150ms debounce for responsive feel
-
-    return () => clearTimeout(timer);
+    if (searchQuery.trim().length >= 1) {
+      search(searchQuery);
+    } else {
+      clearResults();
+    }
   }, [searchQuery, search, clearResults]);
 
   const handleSendRequest = async (targetProfile: SearchableProfile) => {
@@ -246,9 +242,9 @@ export default function Discover() {
                         className="bg-card border-border p-3 hover:border-primary/50 transition-all"
                       >
                         <div className="flex items-center gap-3">
-                          {/* Profile Photo */}
+                          {/* Profile Photo - Eager loading for instant display */}
                           <div 
-                            className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 cursor-pointer"
+                            className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 cursor-pointer overflow-hidden"
                             onClick={() => navigate(`/u/${profile.id}`)}
                           >
                             {profile.avatar_url ? (
@@ -256,12 +252,19 @@ export default function Discover() {
                                 src={profile.avatar_url} 
                                 alt={profile.full_name}
                                 className="w-12 h-12 rounded-full object-cover"
+                                loading="eager"
+                                decoding="async"
+                                fetchPriority="high"
+                                onError={(e) => {
+                                  // Fallback to initials on error
+                                  e.currentTarget.style.display = 'none';
+                                  e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                                }}
                               />
-                            ) : (
-                              <span className="text-primary text-lg font-bold">
-                                {profile.full_name.charAt(0).toUpperCase()}
-                              </span>
-                            )}
+                            ) : null}
+                            <span className={`text-primary text-lg font-bold ${profile.avatar_url ? 'hidden' : ''}`}>
+                              {profile.full_name.charAt(0).toUpperCase()}
+                            </span>
                           </div>
                           
                           {/* Profile Info */}
@@ -360,7 +363,7 @@ export default function Discover() {
                     <Card key={request.id} className="bg-card border-border p-3">
                       <div className="flex items-center gap-3">
                         <div 
-                          className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center cursor-pointer"
+                          className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center cursor-pointer overflow-hidden"
                           onClick={() => navigate(`/u/${request.requester_id}`)}
                         >
                           {request.requester_profile?.avatar_url ? (
@@ -368,12 +371,18 @@ export default function Discover() {
                               src={request.requester_profile.avatar_url} 
                               alt={request.requester_profile.full_name}
                               className="w-10 h-10 rounded-full object-cover"
+                              loading="eager"
+                              decoding="async"
+                              fetchPriority="high"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                                e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                              }}
                             />
-                          ) : (
-                            <span className="text-primary font-bold text-sm">
-                              {request.requester_profile?.full_name?.charAt(0).toUpperCase() || '?'}
-                            </span>
-                          )}
+                          ) : null}
+                          <span className={`text-primary font-bold text-sm ${request.requester_profile?.avatar_url ? 'hidden' : ''}`}>
+                            {request.requester_profile?.full_name?.charAt(0).toUpperCase() || '?'}
+                          </span>
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-foreground truncate text-sm">
@@ -424,7 +433,7 @@ export default function Discover() {
                     <Card key={request.id} className="bg-card border-border p-3">
                       <div className="flex items-center gap-3">
                         <div 
-                          className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center cursor-pointer"
+                          className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center cursor-pointer overflow-hidden"
                           onClick={() => navigate(`/u/${request.target_id}`)}
                         >
                           {request.target_profile?.avatar_url ? (
@@ -432,12 +441,18 @@ export default function Discover() {
                               src={request.target_profile.avatar_url} 
                               alt={request.target_profile.full_name}
                               className="w-10 h-10 rounded-full object-cover"
+                              loading="eager"
+                              decoding="async"
+                              fetchPriority="high"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                                e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                              }}
                             />
-                          ) : (
-                            <span className="text-primary font-bold text-sm">
-                              {request.target_profile?.full_name?.charAt(0).toUpperCase() || '?'}
-                            </span>
-                          )}
+                          ) : null}
+                          <span className={`text-primary font-bold text-sm ${request.target_profile?.avatar_url ? 'hidden' : ''}`}>
+                            {request.target_profile?.full_name?.charAt(0).toUpperCase() || '?'}
+                          </span>
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-foreground truncate text-sm">
