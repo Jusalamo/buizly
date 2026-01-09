@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,7 +12,67 @@ serve(async (req: Request) => {
   }
 
   try {
+    // Require authentication
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      console.log("[google-auth-start] Missing or invalid authorization header");
+      return new Response(
+        JSON.stringify({ error: "Authentication required" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+      );
+    }
+
+    // Validate the JWT token
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    
+    if (claimsError || !claimsData?.claims) {
+      console.log("[google-auth-start] Invalid token:", claimsError?.message);
+      return new Response(
+        JSON.stringify({ error: "Invalid authentication token" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+      );
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log("[google-auth-start] Authenticated user:", userId);
+
     const { redirectUri } = await req.json();
+    
+    // Validate redirectUri is from allowed domains
+    const allowedDomains = [
+      "localhost",
+      "lovable.app",
+      "lovable.dev",
+      "buizly.vercel.app"
+    ];
+    
+    try {
+      const url = new URL(redirectUri);
+      const isAllowed = allowedDomains.some(domain => 
+        url.hostname === domain || url.hostname.endsWith(`.${domain}`)
+      );
+      
+      if (!isAllowed) {
+        console.log("[google-auth-start] Invalid redirect URI domain:", url.hostname);
+        return new Response(
+          JSON.stringify({ error: "Invalid redirect URI" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+        );
+      }
+    } catch {
+      console.log("[google-auth-start] Invalid redirect URI format:", redirectUri);
+      return new Response(
+        JSON.stringify({ error: "Invalid redirect URI format" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      );
+    }
     
     const clientId = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID");
     if (!clientId) {
@@ -31,6 +92,8 @@ serve(async (req: Request) => {
       `access_type=offline&` +
       `prompt=consent`;
 
+    console.log("[google-auth-start] Generated auth URL for user:", userId);
+
     return new Response(
       JSON.stringify({ authUrl }),
       {
@@ -39,9 +102,9 @@ serve(async (req: Request) => {
       }
     );
   } catch (error: any) {
-    console.error("Error starting Google auth:", error);
+    console.error("[google-auth-start] Error:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: "Failed to initiate Google authentication" }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
