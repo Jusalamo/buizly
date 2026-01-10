@@ -6,9 +6,63 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-async function refreshAccessToken(refreshToken: string) {
+// Token decryption utilities using AES-GCM
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyString = Deno.env.get("TOKEN_ENCRYPTION_KEY");
+  if (!keyString) {
+    throw new Error("TOKEN_ENCRYPTION_KEY not configured");
+  }
+  
+  // Use the key string to derive a proper AES key
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(keyString);
+  
+  // Hash the key to get exactly 32 bytes for AES-256
+  const hashBuffer = await crypto.subtle.digest("SHA-256", keyData);
+  
+  return crypto.subtle.importKey(
+    "raw",
+    hashBuffer,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function decryptToken(encryptedToken: string): Promise<string> {
+  // Check if token is encrypted (has enc: prefix)
+  if (!encryptedToken.startsWith("enc:")) {
+    // Return as-is for backwards compatibility with plaintext tokens
+    console.log("[google-create-event] Token not encrypted, using plaintext (legacy)");
+    return encryptedToken;
+  }
+  
+  const key = await getEncryptionKey();
+  
+  // Remove prefix and decode base64
+  const base64Data = encryptedToken.substring(4);
+  const combined = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+  
+  // Extract IV (first 12 bytes) and encrypted data
+  const iv = combined.slice(0, 12);
+  const encryptedData = combined.slice(12);
+  
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    key,
+    encryptedData
+  );
+  
+  const decoder = new TextDecoder();
+  return decoder.decode(decrypted);
+}
+
+async function refreshAccessToken(encryptedRefreshToken: string) {
   const clientId = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID");
   const clientSecret = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET");
+
+  // Decrypt the refresh token before using
+  const refreshToken = await decryptToken(encryptedRefreshToken);
 
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -55,7 +109,7 @@ serve(async (req: Request) => {
       throw new Error("Invalid user token");
     }
 
-    // Get user's Google refresh token
+    // Get user's Google refresh token (encrypted)
     const { data: settings, error: settingsError } = await supabase
       .from("user_settings")
       .select("google_refresh_token")
@@ -66,7 +120,7 @@ serve(async (req: Request) => {
       throw new Error("Google Calendar not connected");
     }
 
-    // Refresh access token
+    // Refresh access token (handles decryption internally)
     const accessToken = await refreshAccessToken(settings.google_refresh_token);
 
     // Create calendar event
