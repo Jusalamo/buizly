@@ -74,10 +74,10 @@ export function useProfileSearch() {
         return;
       }
 
-      // Search profiles by name only - email search disabled for privacy
-      // This prevents authenticated users from enumerating all user emails
+      // Search using profiles_search view - excludes PII (email, phone) by design
+      // This prevents authenticated users from accessing sensitive user data
       const { data: profiles, error } = await supabase
-        .from('profiles')
+        .from('profiles_search')
         .select('id, full_name, avatar_url, job_title, company')
         .neq('id', userId)
         .ilike('full_name', `%${trimmedQuery}%`)

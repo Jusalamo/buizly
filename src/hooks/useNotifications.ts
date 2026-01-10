@@ -82,15 +82,16 @@ export function useNotifications() {
     data?: Record<string, any>
   ) => {
     try {
-      const { error } = await supabase
-        .from('notifications')
-        .insert({
+      // Use edge function to create notifications (bypasses RLS, has rate limiting)
+      const { error } = await supabase.functions.invoke('create-notification', {
+        body: {
           user_id: userId,
           type,
           title,
           message,
           data: data || null
-        });
+        }
+      });
 
       if (error) throw error;
     } catch (error) {

@@ -199,13 +199,15 @@ export function useConnectionRequests() {
 
       if (error) throw error;
 
-      // Create notification for target user with requester info
-      await supabase.from('notifications').insert({
-        user_id: targetId,
-        type: 'new_connection',
-        title: 'New Connection Request',
-        message: `${myProfile?.full_name || 'Someone'} wants to connect with you`,
-        data: { requester_id: user.id, requester_name: myProfile?.full_name, requester_avatar: myProfile?.avatar_url }
+      // Create notification via edge function (bypasses RLS, has rate limiting)
+      await supabase.functions.invoke('create-notification', {
+        body: {
+          user_id: targetId,
+          type: 'new_connection',
+          title: 'New Connection Request',
+          message: `${myProfile?.full_name || 'Someone'} wants to connect with you`,
+          data: { requester_id: user.id, requester_name: myProfile?.full_name, requester_avatar: myProfile?.avatar_url }
+        }
       });
 
       // Update local cache immediately for instant UI feedback
@@ -286,29 +288,33 @@ export function useConnectionRequests() {
         myConnectionsCache.add(requesterProfile.email.toLowerCase());
       }
 
-      // Notify requester that connection was accepted
-      await supabase.from('notifications').insert({
-        user_id: request.requester_id,
-        type: 'new_connection',
-        title: 'Connection Accepted!',
-        message: `${myProfile?.full_name || 'Someone'} accepted your connection request`,
-        data: { 
-          connection_id: user.id, 
-          accepter_name: myProfile?.full_name,
-          accepter_avatar: myProfile?.avatar_url
+      // Notify requester that connection was accepted (via edge function)
+      await supabase.functions.invoke('create-notification', {
+        body: {
+          user_id: request.requester_id,
+          type: 'new_connection',
+          title: 'Connection Accepted!',
+          message: `${myProfile?.full_name || 'Someone'} accepted your connection request`,
+          data: { 
+            connection_id: user.id, 
+            accepter_name: myProfile?.full_name,
+            accepter_avatar: myProfile?.avatar_url
+          }
         }
       });
 
       // Notify myself (optional - for UI confirmation)
-      await supabase.from('notifications').insert({
-        user_id: user.id,
-        type: 'new_connection',
-        title: 'New Connection!',
-        message: `You are now connected with ${requesterProfile.full_name}`,
-        data: { 
-          connection_id: request.requester_id,
-          connection_name: requesterProfile.full_name,
-          connection_avatar: requesterProfile.avatar_url
+      await supabase.functions.invoke('create-notification', {
+        body: {
+          user_id: user.id,
+          type: 'new_connection',
+          title: 'New Connection!',
+          message: `You are now connected with ${requesterProfile.full_name}`,
+          data: { 
+            connection_id: request.requester_id,
+            connection_name: requesterProfile.full_name,
+            connection_avatar: requesterProfile.avatar_url
+          }
         }
       });
 
