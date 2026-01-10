@@ -74,12 +74,13 @@ export function useProfileSearch() {
         return;
       }
 
-      // Search profiles by name OR email - always return results regardless of privacy
+      // Search profiles by name only - email search disabled for privacy
+      // This prevents authenticated users from enumerating all user emails
       const { data: profiles, error } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url, job_title, company, email')
+        .select('id, full_name, avatar_url, job_title, company')
         .neq('id', userId)
-        .or(`full_name.ilike.%${trimmedQuery}%,email.ilike.%${trimmedQuery}%`)
+        .ilike('full_name', `%${trimmedQuery}%`)
         .order('full_name', { ascending: true })
         .limit(3); // Only first 3 closest matches
 
