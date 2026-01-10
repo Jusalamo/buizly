@@ -125,8 +125,7 @@ export default function Auth() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          // CHANGED: Updated redirect URL
-          redirectTo: `https://buizly.vercel.app/auth/callback`,
+          redirectTo: `https://buizly.vercel.app/`,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
