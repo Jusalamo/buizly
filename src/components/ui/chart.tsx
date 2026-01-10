@@ -59,8 +59,9 @@ const ChartContainer = React.forwardRef<
 ChartContainer.displayName = "Chart";
 
 // Validate color values to prevent CSS injection attacks
+// SAFE: Colors come from theme config only - do NOT use user-supplied colors
 function isValidCssColor(color: string): boolean {
-  if (!color || typeof color !== 'string') return false;
+  if (!color || typeof color !== 'string' || color.length > 50) return false;
   const trimmed = color.trim();
   // Allow: hex colors, rgb(a), hsl(a), oklch, oklab, named colors, CSS variables
   const validColorRegex = /^(#[0-9A-Fa-f]{3,8}|rgba?\([^)]+\)|hsla?\([^)]+\)|oklch\([^)]+\)|oklab\([^)]+\)|var\(--[a-zA-Z0-9-]+\)|[a-zA-Z]+)$/;

@@ -131,15 +131,17 @@ export default function PublicProfile() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      // Create notification for the private profile owner
-      await supabase.from('notifications').insert({
-        user_id: userId,
-        type: 'profile_shared',
-        title: 'Someone scanned your card',
-        message: user 
-          ? 'A Buizly user scanned your profile card. Would you like to connect with them?'
-          : 'Someone scanned your profile card. Sign in to see who.',
-        data: user ? { scanner_id: user.id } : null
+      // Create notification via edge function (bypasses RLS, has rate limiting)
+      await supabase.functions.invoke('create-notification', {
+        body: {
+          user_id: userId,
+          type: 'profile_shared',
+          title: 'Someone scanned your card',
+          message: user 
+            ? 'A Buizly user scanned your profile card. Would you like to connect with them?'
+            : 'Someone scanned your profile card. Sign in to see who.',
+          data: user ? { scanner_id: user.id } : null
+        }
       });
 
       setNotificationSent(true);
