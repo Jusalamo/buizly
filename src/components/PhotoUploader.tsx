@@ -42,11 +42,14 @@ export function PhotoUploader({ meetingId, existingPhotos = [], onPhotosChange }
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
+      // Use signed URL for private bucket instead of public URL
+      const { data: signedUrlData, error: urlError } = await supabase.storage
         .from("meeting-media")
-        .getPublicUrl(fileName);
+        .createSignedUrl(fileName, 31536000); // 1 year expiry
 
-      const newPhotos = [...photos, publicUrl];
+      if (urlError) throw urlError;
+
+      const newPhotos = [...photos, signedUrlData.signedUrl];
       setPhotos(newPhotos);
       
       if (onPhotosChange) {
