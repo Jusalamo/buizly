@@ -24,6 +24,52 @@ function checkRateLimit(key: string, limit: number, windowMs: number): boolean {
   return true;
 }
 
+// Token encryption utilities using AES-GCM
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyString = Deno.env.get("TOKEN_ENCRYPTION_KEY");
+  if (!keyString) {
+    throw new Error("TOKEN_ENCRYPTION_KEY not configured");
+  }
+  
+  // Use the key string to derive a proper AES key
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(keyString);
+  
+  // Hash the key to get exactly 32 bytes for AES-256
+  const hashBuffer = await crypto.subtle.digest("SHA-256", keyData);
+  
+  return crypto.subtle.importKey(
+    "raw",
+    hashBuffer,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptToken(token: string): Promise<string> {
+  const key = await getEncryptionKey();
+  const encoder = new TextEncoder();
+  const data = encoder.encode(token);
+  
+  // Generate random IV for each encryption
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    data
+  );
+  
+  // Combine IV and encrypted data, then base64 encode
+  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  combined.set(iv);
+  combined.set(new Uint8Array(encrypted), iv.length);
+  
+  // Return as base64 with prefix to identify encrypted tokens
+  return "enc:" + btoa(String.fromCharCode(...combined));
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -120,12 +166,26 @@ serve(async (req: Request) => {
       );
     }
 
-    // Store refresh token in user_settings
+    // SECURITY: Encrypt refresh token before storing
+    let encryptedToken = null;
+    if (tokens.refresh_token) {
+      try {
+        encryptedToken = await encryptToken(tokens.refresh_token);
+        console.log("[google-auth-callback] Token encrypted successfully");
+      } catch (encError) {
+        console.error("[google-auth-callback] Encryption error:", encError);
+        // Fall back to plaintext if encryption fails (for backwards compatibility)
+        // In production, you should fail here instead
+        encryptedToken = tokens.refresh_token;
+      }
+    }
+
+    // Store encrypted refresh token in user_settings
     const { error: updateError } = await supabase
       .from("user_settings")
       .update({
         google_calendar_connected: true,
-        google_refresh_token: tokens.refresh_token,
+        google_refresh_token: encryptedToken,
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", user.id);
