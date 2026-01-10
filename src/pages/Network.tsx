@@ -14,6 +14,8 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { ConnectionLimitBadge } from "@/components/ConnectionLimitBadge";
 import { useAppCache, invalidateAppCache } from "@/hooks/useAppCache";
+import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
+import { OptimizedAvatar } from "@/components/OptimizedAvatar";
 
 type DateFilter = "all" | "week" | "month" | "year";
 
@@ -26,7 +28,12 @@ export default function Network() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { canAddConnection, getCurrentPlan } = useSubscription();
-  const { connections, loading, isAuthenticated, initialized } = useAppCache();
+  const { connections, loading, isAuthenticated, initialized, refetch } = useAppCache();
+
+  // Set up realtime subscription
+  useRealtimeSubscription({
+    onConnection: () => refetch()
+  });
 
   // Redirect to auth if not authenticated
   useEffect(() => {
@@ -284,11 +291,12 @@ export default function Network() {
                     className="flex-1 flex items-center gap-4 cursor-pointer"
                     onClick={() => navigate(`/connection/${connection.id}`)}
                   >
-                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                      <span className="text-primary text-lg font-bold">
-                        {connection.connection_name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
+                    <OptimizedAvatar
+                      src={(connection as any).connection_avatar_url}
+                      alt={connection.connection_name}
+                      fallback={connection.connection_name.charAt(0)}
+                      size="md"
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-foreground">{connection.connection_name}</p>
                       {connection.connection_title && (

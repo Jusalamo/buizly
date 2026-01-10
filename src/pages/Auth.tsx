@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react";
 import { loginSchema, signupSchema } from "@/lib/validationSchemas";
 import { invalidateAppCache } from "@/hooks/useAppCache";
 import { Separator } from "@/components/ui/separator";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -17,6 +18,7 @@ export default function Auth() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const navigate = useNavigate();
@@ -50,6 +52,12 @@ export default function Auth() {
         return false;
       }
     } else {
+      // Validate signup with password confirmation
+      if (password !== confirmPassword) {
+        setErrors({ confirmPassword: "Passwords do not match" });
+        return false;
+      }
+      
       const result = signupSchema.safeParse({ fullName, email, password });
       if (!result.success) {
         const newErrors: Record<string, string> = {};
@@ -79,7 +87,6 @@ export default function Auth() {
           password,
         });
         if (error) throw error;
-        // Force cache refresh with new user data
         invalidateAppCache();
         navigate("/", { replace: true });
       } else {
@@ -90,11 +97,10 @@ export default function Auth() {
             data: {
               full_name: fullName,
             },
-            emailRedirectTo: `${window.location.origin}/`,
+            emailRedirectTo: `https://buizly.vercel.app/`,
           },
         });
         if (error) throw error;
-        // Force cache refresh with new user data
         invalidateAppCache();
         toast({
           title: "Success!",
@@ -119,7 +125,7 @@ export default function Auth() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/`,
+          redirectTo: `https://buizly.vercel.app/`,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -136,7 +142,7 @@ export default function Auth() {
       setGoogleLoading(false);
     }
   };
-  // Show nothing while checking auth
+
   if (checkingAuth) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -190,12 +196,11 @@ export default function Auth() {
 
             <div className="space-y-2">
               <Label htmlFor="password" className="text-foreground">Password</Label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={`bg-secondary border-border text-foreground ${errors.password ? 'border-destructive' : ''}`}
+                error={!!errors.password}
                 placeholder="••••••••"
               />
               {errors.password && (
@@ -207,6 +212,22 @@ export default function Auth() {
                 </p>
               )}
             </div>
+
+            {!isLogin && (
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword" className="text-foreground">Confirm Password</Label>
+                <PasswordInput
+                  id="confirmPassword"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  error={!!errors.confirmPassword}
+                  placeholder="••••••••"
+                />
+                {errors.confirmPassword && (
+                  <p className="text-destructive text-sm">{errors.confirmPassword}</p>
+                )}
+              </div>
+            )}
 
             <Button
               type="submit"
@@ -267,6 +288,7 @@ export default function Auth() {
               onClick={() => {
                 setIsLogin(!isLogin);
                 setErrors({});
+                setConfirmPassword("");
               }}
               className="text-primary hover:underline text-sm block w-full"
             >
