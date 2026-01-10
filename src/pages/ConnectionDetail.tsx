@@ -4,11 +4,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Mail, Phone, Briefcase, Calendar, ArrowLeft } from "lucide-react";
+import { Mail, Phone, Briefcase, Calendar, ArrowLeft, Instagram } from "lucide-react";
 import { ConnectionDetailSkeleton } from "@/components/skeletons/PageSkeletons";
+import { OptimizedAvatar } from "@/components/OptimizedAvatar";
 import type { Database } from "@/integrations/supabase/types";
 
-type Connection = Database["public"]["Tables"]["connections"]["Row"];
+type Connection = Database["public"]["Tables"]["connections"]["Row"] & {
+  connection_avatar_url?: string;
+  connection_instagram?: string;
+  connection_linkedin?: string;
+};
 
 export default function ConnectionDetail() {
   const { id } = useParams();
@@ -29,7 +34,7 @@ export default function ConnectionDetail() {
         .single();
 
       if (error) throw error;
-      setConnection(data);
+      setConnection(data as Connection);
     } catch (error) {
       console.error("Error loading connection:", error);
     } finally {
@@ -70,11 +75,13 @@ export default function ConnectionDetail() {
 
         {/* Profile Header */}
         <div className="text-center space-y-4">
-          <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center mx-auto">
-            <span className="text-primary text-4xl font-bold">
-              {connection.connection_name.charAt(0).toUpperCase()}
-            </span>
-          </div>
+          <OptimizedAvatar
+            src={connection.connection_avatar_url}
+            alt={connection.connection_name}
+            fallback={connection.connection_name.charAt(0)}
+            size="xl"
+            className="mx-auto"
+          />
           <div>
             <h1 className="text-3xl font-bold text-foreground">{connection.connection_name}</h1>
             {connection.connection_title && (
@@ -85,6 +92,34 @@ export default function ConnectionDetail() {
             )}
           </div>
         </div>
+
+        {/* Social Media Links */}
+        {(connection.connection_linkedin || connection.connection_instagram) && (
+          <div className="flex justify-center gap-3">
+            {connection.connection_linkedin && (
+              <Button
+                variant="outline"
+                size="icon"
+                className="border-[#0077B5] text-[#0077B5] hover:bg-[#0077B5] hover:text-white"
+                onClick={() => window.open(connection.connection_linkedin, '_blank')}
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                </svg>
+              </Button>
+            )}
+            {connection.connection_instagram && (
+              <Button
+                variant="outline"
+                size="icon"
+                className="border-[#E4405F] text-[#E4405F] hover:bg-[#E4405F] hover:text-white"
+                onClick={() => window.open(connection.connection_instagram, '_blank')}
+              >
+                <Instagram className="h-5 w-5" />
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* Contact Information */}
         <Card className="bg-card border-border p-6 space-y-4">

@@ -9,6 +9,8 @@ import { Users, Calendar, TrendingUp, MapPin, Clock, ChevronRight, Filter, UserP
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
 import { useAppCache } from "@/hooks/useAppCache";
+import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
+import { OptimizedAvatar } from "@/components/OptimizedAvatar";
 import type { MeetingStatus } from "@/types/database";
 
 const statusColors: Record<string, string> = {
@@ -24,8 +26,16 @@ type TimeFilter = "week" | "month" | "year" | "all";
 export default function Dashboard() {
   const [connectionFilter, setConnectionFilter] = useState<TimeFilter>("all");
   const navigate = useNavigate();
-  const { incomingRequests } = useConnectionRequests();
-  const { profile, connections: allConnections, meetings: allMeetings, loading, isAuthenticated, initialized } = useAppCache();
+  const { incomingRequests, refetch: refetchRequests } = useConnectionRequests();
+  const { profile, connections: allConnections, meetings: allMeetings, loading, isAuthenticated, initialized, refetch } = useAppCache();
+
+  // Set up realtime subscription
+  useRealtimeSubscription({
+    onNotification: () => refetch(),
+    onConnection: () => refetch(),
+    onMeeting: () => refetch(),
+    onConnectionRequest: () => refetchRequests()
+  });
 
   // Redirect to auth if not authenticated (after cache is initialized)
   useEffect(() => {
@@ -127,7 +137,7 @@ export default function Dashboard() {
         <div className="flex flex-col items-center space-y-6">
           <div className="bg-card border border-border rounded-2xl p-4">
             <QRCode 
-              url={`${window.location.origin}/u/${profile?.id}`}
+              url={`https://buizly.vercel.app/u/${profile?.id}`}
               size={140}
               className="rounded-lg"
             />
@@ -135,19 +145,13 @@ export default function Dashboard() {
           </div>
           
           <div className="flex items-center gap-4">
-            {profile?.avatar_url ? (
-              <img 
-                src={profile.avatar_url} 
-                alt={profile.full_name}
-                className="w-16 h-16 rounded-full object-cover border-2 border-primary"
-              />
-            ) : (
-              <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center border-2 border-primary">
-                <span className="text-primary text-2xl font-bold">
-                  {profile?.full_name?.charAt(0)?.toUpperCase() || 'U'}
-                </span>
-              </div>
-            )}
+            <OptimizedAvatar
+              src={profile?.avatar_url}
+              alt={profile?.full_name || "User"}
+              fallback={profile?.full_name?.charAt(0) || "U"}
+              size="lg"
+              className="border-2 border-primary"
+            />
             <div className="text-center">
               <h1 className="text-2xl font-bold text-foreground">
                 Welcome back, {profile?.full_name?.split(' ')[0] || 'User'}!
@@ -287,11 +291,12 @@ export default function Dashboard() {
                   onClick={() => navigate(`/connection/${connection.id}`)}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                      <span className="text-primary font-medium">
-                        {connection.connection_name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
+                    <OptimizedAvatar
+                      src={(connection as any).connection_avatar_url}
+                      alt={connection.connection_name}
+                      fallback={connection.connection_name.charAt(0)}
+                      size="md"
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-foreground">{connection.connection_name}</p>
                       {connection.connection_title && (
