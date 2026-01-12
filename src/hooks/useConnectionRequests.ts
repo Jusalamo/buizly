@@ -210,6 +210,38 @@ export function useConnectionRequests() {
         }
       });
 
+      // Send email notification for connection request
+      const { data: targetProfile } = await supabase
+        .from('profiles')
+        .select('email, full_name')
+        .eq('id', targetId)
+        .single();
+
+      if (targetProfile?.email) {
+        try {
+          const { data: settings } = await supabase
+            .from('user_settings')
+            .select('email_notifications')
+            .eq('user_id', targetId)
+            .single();
+
+          if (settings?.email_notifications !== false) {
+            await supabase.functions.invoke('send-email', {
+              body: {
+                type: 'connectionRequest',
+                to: targetProfile.email,
+                payload: {
+                  requesterName: myProfile?.full_name || 'Someone',
+                  appUrl: `${window.location.origin}/discover`
+                }
+              }
+            });
+          }
+        } catch (emailError) {
+          console.error('Failed to send email notification:', emailError);
+        }
+      }
+
       // Update local cache immediately for instant UI feedback
       connectionStatusCache.set(targetId, 'pending');
       
@@ -260,7 +292,7 @@ export function useConnectionRequests() {
         .eq('id', user.id)
         .single();
 
-      // Add requester to my connections
+      // Add requester to my connections with avatar
       await supabase.from('connections').insert({
         user_id: user.id,
         connection_name: requesterProfile.full_name,
@@ -268,9 +300,12 @@ export function useConnectionRequests() {
         connection_title: requesterProfile.job_title,
         connection_company: requesterProfile.company,
         connection_phone: requesterProfile.phone,
+        connection_avatar_url: requesterProfile.avatar_url,
+        connection_linkedin: requesterProfile.linkedin_url,
+        connection_instagram: (requesterProfile as any).instagram_url,
       });
 
-      // Add me to requester's connections
+      // Add me to requester's connections with avatar
       if (myProfile) {
         await supabase.from('connections').insert({
           user_id: request.requester_id,
@@ -279,6 +314,9 @@ export function useConnectionRequests() {
           connection_title: myProfile.job_title,
           connection_company: myProfile.company,
           connection_phone: myProfile.phone,
+          connection_avatar_url: myProfile.avatar_url,
+          connection_linkedin: myProfile.linkedin_url,
+          connection_instagram: (myProfile as any).instagram_url,
         });
       }
 
@@ -302,6 +340,34 @@ export function useConnectionRequests() {
           }
         }
       });
+
+      // Send email notification for accepted connection
+      if (requesterProfile.email) {
+        try {
+          const { data: settings } = await supabase
+            .from('user_settings')
+            .select('email_notifications')
+            .eq('user_id', request.requester_id)
+            .single();
+
+          if (settings?.email_notifications !== false) {
+            await supabase.functions.invoke('send-email', {
+              body: {
+                type: 'connectionAccepted',
+                to: requesterProfile.email,
+                payload: {
+                  accepterName: myProfile?.full_name || 'Someone',
+                  jobTitle: myProfile?.job_title,
+                  company: myProfile?.company,
+                  appUrl: `${window.location.origin}/network`
+                }
+              }
+            });
+          }
+        } catch (emailError) {
+          console.error('Failed to send email notification:', emailError);
+        }
+      }
 
       // Notify myself (optional - for UI confirmation)
       await supabase.functions.invoke('create-notification', {

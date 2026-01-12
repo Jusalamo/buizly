@@ -9,12 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   User, Bell, Database, Settings as SettingsIcon, LogOut, 
-  ChevronRight, Calendar, Moon, Sun, Eye, RefreshCw, BarChart3, Linkedin, Crown, Palette
+  ChevronRight, Calendar, Moon, Sun, Eye, RefreshCw, BarChart3, Linkedin, Crown, Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useSubscription } from "@/hooks/useSubscription";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { LinkedInImport } from "@/components/LinkedInImport";
 import { CalendarSync } from "@/components/CalendarSync";
 import { BusinessCardCustomizer } from "@/components/BusinessCardCustomizer";
@@ -26,8 +27,15 @@ export default function Settings() {
   const { settings, loading, updateSettings, refetch } = useUserSettings();
   const { theme, setTheme } = useTheme();
   const { getCurrentPlan } = useSubscription();
+  const { 
+    isSupported: pushSupported, 
+    permission: pushPermission, 
+    isSubscribed: pushSubscribed, 
+    loading: pushLoading,
+    subscribe: subscribePush,
+    unsubscribe: unsubscribePush
+  } = usePushNotifications();
   
-  const [calendarSync, setCalendarSync] = useState(false);
   const [profileVisibility, setProfileVisibility] = useState("public");
   const [syncing, setSyncing] = useState(false);
   const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
@@ -72,13 +80,24 @@ export default function Settings() {
     try {
       if (type === 'email') {
         await updateSettings({ email_notifications: value });
+        toast({
+          title: "Settings updated",
+          description: `Email notifications ${value ? 'enabled' : 'disabled'}`,
+        });
       } else {
-        await updateSettings({ push_notifications: value });
+        // Handle push notification permission
+        if (value) {
+          const success = await subscribePush();
+          if (success) {
+            await updateSettings({ push_notifications: true });
+          }
+        } else {
+          const success = await unsubscribePush();
+          if (success) {
+            await updateSettings({ push_notifications: false });
+          }
+        }
       }
-      toast({
-        title: "Settings updated",
-        description: `${type === 'email' ? 'Email' : 'Push'} notifications ${value ? 'enabled' : 'disabled'}`,
-      });
     } catch (error) {
       toast({
         title: "Error",
@@ -225,7 +244,10 @@ export default function Settings() {
           
           <div className="space-y-4 pl-14">
             <div className="flex items-center justify-between">
-              <Label htmlFor="email-notif" className="text-foreground">Email Notifications</Label>
+              <div>
+                <Label htmlFor="email-notif" className="text-foreground">Email Notifications</Label>
+                <p className="text-xs text-muted-foreground">Receive updates via email</p>
+              </div>
               <Switch
                 id="email-notif"
                 checked={settings?.email_notifications ?? true}
@@ -233,12 +255,26 @@ export default function Settings() {
               />
             </div>
             <div className="flex items-center justify-between">
-              <Label htmlFor="push-notif" className="text-foreground">Push Notifications</Label>
-              <Switch
-                id="push-notif"
-                checked={settings?.push_notifications ?? true}
-                onCheckedChange={(v) => handleNotificationToggle('push', v)}
-              />
+              <div>
+                <Label htmlFor="push-notif" className="text-foreground">Push Notifications</Label>
+                <p className="text-xs text-muted-foreground">
+                  {!pushSupported 
+                    ? "Not supported in this browser" 
+                    : pushPermission === 'denied' 
+                    ? "Blocked - enable in browser settings"
+                    : "Real-time alerts on your device"}
+                </p>
+              </div>
+              {pushLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              ) : (
+                <Switch
+                  id="push-notif"
+                  checked={pushSubscribed && (settings?.push_notifications ?? false)}
+                  onCheckedChange={(v) => handleNotificationToggle('push', v)}
+                  disabled={!pushSupported || pushPermission === 'denied'}
+                />
+              )}
             </div>
           </div>
         </Card>

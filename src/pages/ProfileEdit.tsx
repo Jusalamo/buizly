@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft, Camera, Upload } from "lucide-react";
+import { Loader2, ArrowLeft, Upload, X, Plus, Linkedin, Instagram } from "lucide-react";
+import { OptimizedAvatar } from "@/components/OptimizedAvatar";
+import { invalidateAppCache } from "@/hooks/useAppCache";
 import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -30,6 +31,11 @@ export default function ProfileEdit() {
   const [website, setWebsite] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [instagramUrl, setInstagramUrl] = useState("");
+  const [galleryPhotos, setGalleryPhotos] = useState<string[]>([]);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadProfile();
@@ -60,6 +66,9 @@ export default function ProfileEdit() {
       setWebsite(data.website || "");
       setBio(data.bio || "");
       setAvatarUrl(data.avatar_url || "");
+      setLinkedinUrl(data.linkedin_url || "");
+      setInstagramUrl((data as any).instagram_url || "");
+      setGalleryPhotos((data as any).gallery_photos || []);
     } catch (error: any) {
       toast({
         title: "Error loading profile",
@@ -139,6 +148,79 @@ export default function ProfileEdit() {
     }
   };
 
+  const uploadGalleryPhoto = async (file: File) => {
+    if (galleryPhotos.length >= 3) {
+      toast({
+        title: "Maximum photos reached",
+        description: "You can only add up to 3 gallery photos",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUploadingGallery(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/gallery-${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, { 
+          contentType: file.type 
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      const newPhotos = [...galleryPhotos, data.publicUrl];
+      setGalleryPhotos(newPhotos);
+
+      toast({
+        title: "Photo added",
+        description: "Gallery photo uploaded successfully",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingGallery(false);
+    }
+  };
+
+  const handleGalleryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Please select an image under 5MB",
+          variant: "destructive",
+        });
+        return;
+      }
+      uploadGalleryPhoto(file);
+    }
+    e.target.value = "";
+  };
+
+  const removeGalleryPhoto = (index: number) => {
+    const newPhotos = galleryPhotos.filter((_, i) => i !== index);
+    setGalleryPhotos(newPhotos);
+    toast({
+      title: "Photo removed",
+      description: "Gallery photo has been removed",
+    });
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -158,10 +240,15 @@ export default function ProfileEdit() {
           website: website,
           bio: bio,
           avatar_url: avatarUrl,
-        })
+          linkedin_url: linkedinUrl,
+          instagram_url: instagramUrl,
+          gallery_photos: galleryPhotos,
+        } as any)
         .eq("id", user.id);
 
       if (error) throw error;
+
+      invalidateAppCache();
 
       toast({
         title: "Profile updated!",
@@ -209,12 +296,25 @@ export default function ProfileEdit() {
 
         {/* Profile Photo Upload */}
         <div className="flex flex-col items-center space-y-4">
-          <Avatar className="w-32 h-32 border-4 border-primary">
-            <AvatarImage src={avatarUrl} className="object-cover" />
-            <AvatarFallback className="bg-primary text-primary-foreground text-3xl">
-              {fullName.charAt(0) || "U"}
-            </AvatarFallback>
-          </Avatar>
+          <div 
+            className="relative cursor-pointer group"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <OptimizedAvatar
+              src={avatarUrl}
+              alt={fullName}
+              fallback={fullName?.charAt(0) || "U"}
+              size="xl"
+              className="border-4 border-primary"
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+              {uploading ? (
+                <Loader2 className="h-6 w-6 animate-spin text-white" />
+              ) : (
+                <Upload className="h-6 w-6 text-white" />
+              )}
+            </div>
+          </div>
           
           <input
             ref={fileInputRef}
@@ -224,25 +324,7 @@ export default function ProfileEdit() {
             className="hidden"
           />
           
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-            >
-              {uploading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Upload className="h-4 w-4 mr-2" />
-              )}
-              {uploading ? "Uploading..." : "Upload Photo"}
-            </Button>
-          </div>
-          {avatarUrl && (
-            <p className="text-xs text-muted-foreground">Photo will update instantly across your profile</p>
-          )}
+          <p className="text-xs text-muted-foreground">Tap to change photo</p>
         </div>
 
         <form onSubmit={handleSave} className="space-y-6">
@@ -324,6 +406,97 @@ export default function ProfileEdit() {
               className="bg-secondary border-border text-foreground min-h-[120px]"
               placeholder="Tell people about yourself..."
             />
+          </div>
+
+          {/* Social Links Section */}
+          <div className="space-y-4 pt-4 border-t border-border">
+            <h3 className="text-lg font-semibold text-foreground">Social Links</h3>
+            
+            <div className="space-y-2">
+              <Label htmlFor="linkedin" className="text-foreground flex items-center gap-2">
+                <Linkedin className="h-4 w-4 text-[#0077B5]" />
+                LinkedIn
+              </Label>
+              <Input
+                id="linkedin"
+                type="url"
+                value={linkedinUrl}
+                onChange={(e) => setLinkedinUrl(e.target.value)}
+                className="bg-secondary border-border text-foreground"
+                placeholder="https://linkedin.com/in/yourprofile"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="instagram" className="text-foreground flex items-center gap-2">
+                <Instagram className="h-4 w-4 text-[#E4405F]" />
+                Instagram
+              </Label>
+              <Input
+                id="instagram"
+                type="url"
+                value={instagramUrl}
+                onChange={(e) => setInstagramUrl(e.target.value)}
+                className="bg-secondary border-border text-foreground"
+                placeholder="https://instagram.com/yourprofile"
+              />
+            </div>
+          </div>
+
+          {/* Gallery Photos Section */}
+          <div className="space-y-4 pt-4 border-t border-border">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">Gallery Photos</h3>
+                <p className="text-sm text-muted-foreground">Add up to 3 photos to showcase your work</p>
+              </div>
+              <span className="text-sm text-muted-foreground">{galleryPhotos.length}/3</span>
+            </div>
+            
+            <input
+              ref={galleryInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleGalleryFileChange}
+              className="hidden"
+            />
+
+            <div className="grid grid-cols-3 gap-3">
+              {galleryPhotos.map((photo, index) => (
+                <div key={index} className="relative aspect-square">
+                  <img
+                    src={photo}
+                    alt={`Gallery photo ${index + 1}`}
+                    className="w-full h-full object-cover rounded-lg border border-border"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeGalleryPhoto(index)}
+                    className="absolute top-1 right-1 p-1 bg-destructive rounded-full hover:bg-destructive/80"
+                  >
+                    <X className="h-3 w-3 text-destructive-foreground" />
+                  </button>
+                </div>
+              ))}
+              
+              {galleryPhotos.length < 3 && (
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  disabled={uploadingGallery}
+                  className="aspect-square border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                >
+                  {uploadingGallery ? (
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  ) : (
+                    <>
+                      <Plus className="h-6 w-6" />
+                      <span className="text-xs">Add Photo</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
 
           <Button

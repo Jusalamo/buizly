@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Mail, Phone, Globe, Building, Briefcase, Share2, Edit, ArrowLeft } from "lucide-react";
+import { Mail, Phone, Globe, Building, Briefcase, Share2, Edit, ArrowLeft, Linkedin, Instagram } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ProfileSkeleton } from "@/components/skeletons/PageSkeletons";
 import { useAppCache } from "@/hooks/useAppCache";
+import { OptimizedAvatar } from "@/components/OptimizedAvatar";
+import { GalleryPhotos } from "@/components/GalleryPhotos";
 
 export default function Profile() {
   const { profile, loading, isAuthenticated, initialized } = useAppCache();
@@ -93,20 +95,13 @@ export default function Profile() {
         {/* Profile Card */}
         <Card className="bg-card border-border p-6">
           <div className="flex items-start gap-4">
-            {profile.avatar_url ? (
-              <img 
-                src={profile.avatar_url} 
-                alt={profile.full_name}
-                className="w-20 h-20 rounded-full object-cover flex-shrink-0 border-2 border-primary"
-                loading="eager"
-              />
-            ) : (
-              <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 border-2 border-primary">
-                <span className="text-primary text-3xl font-bold">
-                  {profile.full_name?.charAt(0)?.toUpperCase() || 'U'}
-                </span>
-              </div>
-            )}
+            <OptimizedAvatar
+              src={profile.avatar_url}
+              alt={profile.full_name}
+              fallback={profile.full_name?.charAt(0) || 'U'}
+              size="xl"
+              className="border-2 border-primary flex-shrink-0"
+            />
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-foreground">{profile.full_name}</h2>
               {profile.job_title && (
@@ -115,6 +110,30 @@ export default function Profile() {
               {profile.company && (
                 <p className="text-muted-foreground">{profile.company}</p>
               )}
+              
+              {/* Social Links */}
+              <div className="flex gap-2 mt-3">
+                {profile.linkedin_url && (
+                  <a 
+                    href={profile.linkedin_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="p-2 bg-[#0077B5]/10 rounded-lg hover:bg-[#0077B5]/20 transition-colors"
+                  >
+                    <Linkedin className="h-5 w-5 text-[#0077B5]" />
+                  </a>
+                )}
+                {(profile as any).instagram_url && (
+                  <a 
+                    href={(profile as any).instagram_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="p-2 bg-[#E4405F]/10 rounded-lg hover:bg-[#E4405F]/20 transition-colors"
+                  >
+                    <Instagram className="h-5 w-5 text-[#E4405F]" />
+                  </a>
+                )}
+              </div>
             </div>
           </div>
 
@@ -124,6 +143,11 @@ export default function Profile() {
             </p>
           )}
         </Card>
+
+        {/* Gallery Photos */}
+        {(profile as any).gallery_photos && (profile as any).gallery_photos.length > 0 && (
+          <GalleryPhotos photos={(profile as any).gallery_photos} onChange={() => {}} editable={false} />
+        )}
 
         {/* Contact Information */}
         <Card className="bg-card border-border p-6 space-y-4">

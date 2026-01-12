@@ -11,7 +11,7 @@ const corsHeaders = {
 };
 
 interface EmailRequest {
-  type: "welcome" | "contactRequest" | "cardConnection";
+  type: "welcome" | "contactRequest" | "cardConnection" | "connectionAccepted" | "connectionRequest" | "profileUpdate";
   to: string;
   payload: Record<string, any>;
 }
@@ -148,6 +148,52 @@ const handler = async (req: Request): Promise<Response> => {
             <p style="margin-top: 32px; color: #666; font-size: 14px;">Download Buizly to create your own digital business card!</p>
           </div>
         `;
+        break;
+
+      case "connectionAccepted":
+        subject = `${escapeHtml(payload.accepterName)} accepted your connection request!`;
+        html = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #00FF4D;">You're now connected!</h1>
+            <p><strong>${escapeHtml(payload.accepterName)}</strong> has accepted your connection request on Buizly.</p>
+            <div style="background: #f5f5f5; padding: 24px; border-radius: 12px; margin: 24px 0;">
+              <h2 style="margin: 0 0 8px 0;">${escapeHtml(payload.accepterName)}</h2>
+              ${payload.jobTitle ? `<p style="margin: 4px 0; color: #00FF4D; font-weight: 600;">${escapeHtml(payload.jobTitle)}</p>` : ""}
+              ${payload.company ? `<p style="margin: 4px 0; color: #666;">${escapeHtml(payload.company)}</p>` : ""}
+            </div>
+            <a href="${escapeHtml(payload.appUrl)}" style="display: inline-block; background: #00FF4D; color: #000; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px;">View Connection</a>
+            <p style="margin-top: 32px; color: #666; font-size: 14px;">Happy networking!<br>The Buizly Team</p>
+          </div>
+        `;
+        break;
+
+      case "connectionRequest":
+        subject = `${escapeHtml(payload.requesterName)} wants to connect with you on Buizly`;
+        html = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #00FF4D;">New Connection Request</h1>
+            <p><strong>${escapeHtml(payload.requesterName)}</strong> would like to connect with you on Buizly.</p>
+            <div style="background: #f5f5f5; padding: 24px; border-radius: 12px; margin: 24px 0;">
+              <h2 style="margin: 0 0 8px 0;">${escapeHtml(payload.requesterName)}</h2>
+              ${payload.jobTitle ? `<p style="margin: 4px 0; color: #00FF4D; font-weight: 600;">${escapeHtml(payload.jobTitle)}</p>` : ""}
+              ${payload.company ? `<p style="margin: 4px 0; color: #666;">${escapeHtml(payload.company)}</p>` : ""}
+            </div>
+            <a href="${escapeHtml(payload.appUrl)}" style="display: inline-block; background: #00FF4D; color: #000; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px;">View Request</a>
+            <p style="margin-top: 32px; color: #666; font-size: 14px;">Happy networking!<br>The Buizly Team</p>
+          </div>
+        `;
+        break;
+
+      case "profileUpdate":
+        subject = `${escapeHtml(payload.connectionName)} updated their profile on Buizly`;
+        html = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #00FF4D;">Profile Update</h1>
+            <p><strong>${escapeHtml(payload.connectionName)}</strong> has updated their profile information.</p>
+            <a href="${escapeHtml(payload.profileUrl)}" style="display: inline-block; background: #00FF4D; color: #000; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 16px;">View Profile</a>
+            <p style="margin-top: 32px; color: #666; font-size: 14px;">Stay connected!<br>The Buizly Team</p>
+          </div>
+        `; 
         break;
 
       default:

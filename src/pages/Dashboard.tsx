@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
 import { useAppCache } from "@/hooks/useAppCache";
 import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
+import { useUserSettings } from "@/hooks/useUserSettings";
 import { OptimizedAvatar } from "@/components/OptimizedAvatar";
+import { ProfileOnboarding } from "@/components/ProfileOnboarding";
 import type { MeetingStatus } from "@/types/database";
 
 const statusColors: Record<string, string> = {
@@ -25,9 +27,11 @@ type TimeFilter = "week" | "month" | "year" | "all";
 
 export default function Dashboard() {
   const [connectionFilter, setConnectionFilter] = useState<TimeFilter>("all");
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const navigate = useNavigate();
   const { incomingRequests, refetch: refetchRequests } = useConnectionRequests();
   const { profile, connections: allConnections, meetings: allMeetings, loading, isAuthenticated, initialized, refetch } = useAppCache();
+  const { settings, loading: settingsLoading } = useUserSettings();
 
   // Set up realtime subscription
   useRealtimeSubscription({
@@ -43,6 +47,13 @@ export default function Dashboard() {
       navigate("/auth", { replace: true });
     }
   }, [initialized, isAuthenticated, profile, navigate]);
+
+  // Check if onboarding is needed
+  useEffect(() => {
+    if (settings && !settings.onboarding_completed && isAuthenticated) {
+      setShowOnboarding(true);
+    }
+  }, [settings, isAuthenticated]);
 
   // Filter upcoming meetings (not cancelled, future dates)
   const upcomingMeetings = useMemo(() => {
@@ -106,6 +117,18 @@ export default function Dashboard() {
   // Don't render if not authenticated (will redirect)
   if (!isAuthenticated && !profile) {
     return null;
+  }
+
+  // Show onboarding if needed
+  if (showOnboarding) {
+    return (
+      <ProfileOnboarding 
+        onComplete={() => {
+          setShowOnboarding(false);
+          refetch();
+        }} 
+      />
+    );
   }
 
   return (
