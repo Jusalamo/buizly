@@ -3,12 +3,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Mail, Phone, Briefcase, Globe, Download, Building, Lock, Smartphone, Bell, Instagram } from "lucide-react";
+import { Mail, Phone, Briefcase, Globe, Download, Lock, Smartphone, Bell, Instagram } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ProfileCardSkeleton } from "@/components/skeletons/ProfileCardSkeleton";
 import { OpenAppModal } from "@/components/OpenAppModal";
 import { OptimizedAvatar } from "@/components/OptimizedAvatar";
-import { GalleryPhotos } from "@/components/GalleryPhotos";
 import type { Database } from "@/integrations/supabase/types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"] & {
@@ -213,10 +212,19 @@ END:VCARD`;
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-8 space-y-6 pb-12">
-        {/* Gallery Photos */}
+        {/* Gallery Photos - Horizontal row */}
         {state.profile.gallery_photos && state.profile.gallery_photos.length > 0 && (
           <Card className="bg-card border-border p-4">
-            <GalleryPhotos photos={state.profile.gallery_photos} onChange={() => {}} editable={false} />
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {state.profile.gallery_photos.map((photo, index) => (
+                <img
+                  key={index}
+                  src={photo}
+                  alt={`Gallery photo ${index + 1}`}
+                  className="h-24 w-24 object-cover rounded-lg flex-shrink-0"
+                />
+              ))}
+            </div>
           </Card>
         )}
 

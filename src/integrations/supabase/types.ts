@@ -72,8 +72,12 @@ export type Database = {
       }
       connections: {
         Row: {
+          connection_avatar_url: string | null
           connection_company: string | null
           connection_email: string | null
+          connection_gallery_photos: string[] | null
+          connection_instagram: string | null
+          connection_linkedin: string | null
           connection_name: string
           connection_phone: string | null
           connection_title: string | null
@@ -83,8 +87,12 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          connection_avatar_url?: string | null
           connection_company?: string | null
           connection_email?: string | null
+          connection_gallery_photos?: string[] | null
+          connection_instagram?: string | null
+          connection_linkedin?: string | null
           connection_name: string
           connection_phone?: string | null
           connection_title?: string | null
@@ -94,8 +102,12 @@ export type Database = {
           user_id: string
         }
         Update: {
+          connection_avatar_url?: string | null
           connection_company?: string | null
           connection_email?: string | null
+          connection_gallery_photos?: string[] | null
+          connection_instagram?: string | null
+          connection_linkedin?: string | null
           connection_name?: string
           connection_phone?: string | null
           connection_title?: string | null
@@ -127,6 +139,7 @@ export type Database = {
           created_at: string
           id: string
           meeting_id: string
+          photo_urls: string[] | null
           text_note: string | null
         }
         Insert: {
@@ -134,6 +147,7 @@ export type Database = {
           created_at?: string
           id?: string
           meeting_id: string
+          photo_urls?: string[] | null
           text_note?: string | null
         }
         Update: {
@@ -141,6 +155,7 @@ export type Database = {
           created_at?: string
           id?: string
           meeting_id?: string
+          photo_urls?: string[] | null
           text_note?: string | null
         }
         Relationships: [
@@ -412,7 +427,9 @@ export type Database = {
           created_at: string
           email: string
           full_name: string
+          gallery_photos: string[] | null
           id: string
+          instagram_url: string | null
           job_title: string | null
           linkedin_url: string | null
           phone: string | null
@@ -427,7 +444,9 @@ export type Database = {
           created_at?: string
           email: string
           full_name: string
+          gallery_photos?: string[] | null
           id: string
+          instagram_url?: string | null
           job_title?: string | null
           linkedin_url?: string | null
           phone?: string | null
@@ -442,7 +461,9 @@ export type Database = {
           created_at?: string
           email?: string
           full_name?: string
+          gallery_photos?: string[] | null
           id?: string
+          instagram_url?: string | null
           job_title?: string | null
           linkedin_url?: string | null
           phone?: string | null

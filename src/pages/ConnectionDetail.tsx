@@ -13,6 +13,7 @@ type Connection = Database["public"]["Tables"]["connections"]["Row"] & {
   connection_avatar_url?: string;
   connection_instagram?: string;
   connection_linkedin?: string;
+  connection_gallery_photos?: string[];
 };
 
 export default function ConnectionDetail() {
@@ -92,6 +93,22 @@ export default function ConnectionDetail() {
             )}
           </div>
         </div>
+
+        {/* Gallery Photos - Horizontal row */}
+        {connection.connection_gallery_photos && connection.connection_gallery_photos.length > 0 && (
+          <Card className="bg-card border-border p-4">
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {connection.connection_gallery_photos.map((photo, index) => (
+                <img
+                  key={index}
+                  src={photo}
+                  alt={`Gallery photo ${index + 1}`}
+                  className="h-24 w-24 object-cover rounded-lg flex-shrink-0"
+                />
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* Social Media Links */}
         {(connection.connection_linkedin || connection.connection_instagram) && (

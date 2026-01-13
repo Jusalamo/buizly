@@ -15,6 +15,7 @@ interface ConnectionRequest {
     avatar_url: string | null;
     job_title: string | null;
     company: string | null;
+    email?: string;
   };
   target_profile?: {
     id: string;
@@ -22,6 +23,7 @@ interface ConnectionRequest {
     avatar_url: string | null;
     job_title: string | null;
     company: string | null;
+    email?: string;
   };
 }
 
@@ -56,6 +58,7 @@ export function useConnectionRequests() {
           .from('connection_requests')
           .select('*')
           .or(`requester_id.eq.${user.id},target_id.eq.${user.id}`)
+          .eq('status', 'pending') // Only fetch pending requests
           .order('created_at', { ascending: false }),
         supabase
           .from('connections')
@@ -76,7 +79,6 @@ export function useConnectionRequests() {
       const requests = requestsResult.data || [];
 
       if (requests.length === 0) {
-        connectionStatusCache.clear();
         setIncomingRequests([]);
         setOutgoingRequests([]);
         setLoading(false);
@@ -108,31 +110,14 @@ export function useConnectionRequests() {
           target_profile: profileMap.get(r.target_id),
         };
 
-        // Update cache: Check if user is requester or target
+        // Update cache
         const otherId = r.requester_id === user.id ? r.target_id : r.requester_id;
-        
-        // Only set status if actually accepted and still connected
-        if (r.status === 'accepted') {
-          const otherProfile = profileMap.get(otherId);
-          const isActuallyConnected = otherProfile?.email && 
-            myConnectionsCache.has(otherProfile.email.toLowerCase());
-          
-          if (isActuallyConnected) {
-            connectionStatusCache.set(otherId, 'accepted');
-          } else {
-            // Request was accepted but connection was removed
-            connectionStatusCache.set(otherId, 'none');
-          }
-        } else if (r.status === 'pending') {
-          connectionStatusCache.set(otherId, 'pending');
-        } else if (r.status === 'declined') {
-          connectionStatusCache.set(otherId, 'declined');
-        }
+        connectionStatusCache.set(otherId, 'pending');
         
         return req;
       });
 
-      setIncomingRequests(enrichedRequests.filter(r => r.target_id === user.id && r.status === 'pending'));
+      setIncomingRequests(enrichedRequests.filter(r => r.target_id === user.id));
       setOutgoingRequests(enrichedRequests.filter(r => r.requester_id === user.id));
     } catch (error) {
       console.error('Error fetching connection requests:', error);
@@ -277,22 +262,14 @@ export function useConnectionRequests() {
 
       if (!requesterProfile) throw new Error('Requester profile not found');
 
-      // Update request status
-      const { error: updateError } = await supabase
-        .from('connection_requests')
-        .update({ status: 'accepted' })
-        .eq('id', requestId);
-
-      if (updateError) throw updateError;
-
-      // Add to connections (both ways)
+      // Get my profile
       const { data: myProfile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
 
-      // Add requester to my connections with avatar
+      // Add requester to my connections with full details
       await supabase.from('connections').insert({
         user_id: user.id,
         connection_name: requesterProfile.full_name,
@@ -303,9 +280,10 @@ export function useConnectionRequests() {
         connection_avatar_url: requesterProfile.avatar_url,
         connection_linkedin: requesterProfile.linkedin_url,
         connection_instagram: (requesterProfile as any).instagram_url,
+        connection_gallery_photos: (requesterProfile as any).gallery_photos,
       });
 
-      // Add me to requester's connections with avatar
+      // Add me to requester's connections with full details (RECIPROCAL)
       if (myProfile) {
         await supabase.from('connections').insert({
           user_id: request.requester_id,
@@ -317,8 +295,15 @@ export function useConnectionRequests() {
           connection_avatar_url: myProfile.avatar_url,
           connection_linkedin: myProfile.linkedin_url,
           connection_instagram: (myProfile as any).instagram_url,
+          connection_gallery_photos: (myProfile as any).gallery_photos,
         });
       }
+
+      // DELETE the request after acceptance (clear it from the list)
+      await supabase
+        .from('connection_requests')
+        .delete()
+        .eq('id', requestId);
 
       // Update local caches immediately
       connectionStatusCache.set(request.requester_id, 'accepted');
@@ -399,9 +384,10 @@ export function useConnectionRequests() {
         .eq('id', requestId)
         .single();
         
+      // Delete the request instead of just updating status
       const { error } = await supabase
         .from('connection_requests')
-        .update({ status: 'declined' })
+        .delete()
         .eq('id', requestId);
 
       if (error) throw error;
