@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 
 interface VoiceRecorderProps {
   meetingId: string;
@@ -14,13 +15,14 @@ interface VoiceRecorderProps {
 export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: VoiceRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(existingAudioUrl || null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [duration, setDuration] = useState(0);
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
   const [waveformHeights, setWaveformHeights] = useState<number[]>(Array(20).fill(20));
+  const [loading, setLoading] = useState(true);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -30,6 +32,32 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
   const waveformRef = useRef<number | null>(null);
 
   const { toast } = useToast();
+
+  // Load existing audio notes on mount
+  useEffect(() => {
+    loadExistingNotes();
+  }, [meetingId]);
+
+  const loadExistingNotes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('meeting_notes')
+        .select('audio_note_url')
+        .eq('meeting_id', meetingId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+
+      if (data && data.length > 0 && data[0].audio_note_url) {
+        setAudioUrl(data[0].audio_note_url);
+      }
+    } catch (error) {
+      console.error('Error loading existing notes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Cleanup on unmount
   useEffect(() => {
@@ -185,6 +213,7 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
       if (urlError) throw urlError;
 
       const savedAudioUrl = signedUrlData.signedUrl;
+      setAudioUrl(savedAudioUrl);
 
       // Save to meeting_notes table
       await supabase.from("meeting_notes").insert({
@@ -263,7 +292,7 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
     }
   }, [audioUrl, isPlaying, toast]);
 
-  const deleteRecording = () => {
+  const deleteRecording = async () => {
     cleanup();
     setAudioBlob(null);
     setAudioUrl(null);
@@ -272,6 +301,17 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
     setPlaybackProgress(0);
     setTotalDuration(0);
     audioRef.current = null;
+
+    // Delete from database
+    try {
+      await supabase
+        .from('meeting_notes')
+        .delete()
+        .eq('meeting_id', meetingId)
+        .not('audio_note_url', 'is', null);
+    } catch (error) {
+      console.error('Error deleting from database:', error);
+    }
 
     if (onAudioSaved) {
       onAudioSaved("");
@@ -288,6 +328,14 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
+
+  if (loading) {
+    return (
+      <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-center">
+        <LoadingSpinner size="sm" />
+      </div>
+    );
+  }
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 space-y-4">
