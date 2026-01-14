@@ -11,7 +11,8 @@ export type NotificationType =
   | 'new_participant'
   | 'profile_shared'
   | 'new_connection'
-  | 'follow_up_scheduled';
+  | 'follow_up_scheduled'
+  | 'plug_request';
 
 export interface MeetingParticipant {
   id: string;

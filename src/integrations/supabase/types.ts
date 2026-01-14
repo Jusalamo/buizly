@@ -374,6 +374,94 @@ export type Database = {
           },
         ]
       }
+      plug_participants: {
+        Row: {
+          id: string
+          notified_at: string | null
+          plug_id: string
+          responded_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          notified_at?: string | null
+          plug_id: string
+          responded_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          notified_at?: string | null
+          plug_id?: string
+          responded_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plug_participants_plug_id_fkey"
+            columns: ["plug_id"]
+            isOneToOne: false
+            referencedRelation: "plugs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plug_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plug_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_search"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plugs: {
+        Row: {
+          created_at: string
+          id: string
+          message: string | null
+          sender_id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          sender_id: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          sender_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plugs_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plugs_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_search"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profile_views: {
         Row: {
           created_at: string
@@ -710,6 +798,7 @@ export type Database = {
         | "profile_shared"
         | "new_connection"
         | "follow_up_scheduled"
+        | "plug_request"
       subscription_plan: "free" | "pro" | "business"
       subscription_status:
         | "active"
@@ -862,6 +951,7 @@ export const Constants = {
         "profile_shared",
         "new_connection",
         "follow_up_scheduled",
+        "plug_request",
       ],
       subscription_plan: ["free", "pro", "business"],
       subscription_status: [
