@@ -6,10 +6,20 @@ import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 
+const MAX_DURATION = 30; // 30 seconds max per PRD
+const MAX_RECORDINGS = 5; // 5 recordings max per meeting per PRD
+
 interface VoiceRecorderProps {
   meetingId: string;
   existingAudioUrl?: string;
   onAudioSaved?: (url: string) => void;
+}
+
+interface VoiceNote {
+  id: string;
+  audio_url: string;
+  created_at: string;
+  creator_id?: string;
 }
 
 export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: VoiceRecorderProps) {
@@ -23,6 +33,8 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
   const [totalDuration, setTotalDuration] = useState(0);
   const [waveformHeights, setWaveformHeights] = useState<number[]>(Array(20).fill(20));
   const [loading, setLoading] = useState(true);
+  const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>([]);
+  const [playingId, setPlayingId] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -42,15 +54,26 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
     try {
       const { data, error } = await supabase
         .from('meeting_notes')
-        .select('audio_note_url')
+        .select('id, audio_note_url, created_at')
         .eq('meeting_id', meetingId)
-        .order('created_at', { ascending: false })
-        .limit(1);
+        .not('audio_note_url', 'is', null)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      if (data && data.length > 0 && data[0].audio_note_url) {
-        setAudioUrl(data[0].audio_note_url);
+      const notes = (data || [])
+        .filter(d => d.audio_note_url)
+        .map(d => ({
+          id: d.id,
+          audio_url: d.audio_note_url!,
+          created_at: d.created_at
+        }));
+      
+      setVoiceNotes(notes);
+      
+      // Set first note as current if exists
+      if (notes.length > 0) {
+        setAudioUrl(notes[0].audio_url);
       }
     } catch (error) {
       console.error('Error loading existing notes:', error);
@@ -58,6 +81,8 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
       setLoading(false);
     }
   };
+
+  const canRecord = voiceNotes.length < MAX_RECORDINGS;
 
   // Cleanup on unmount
   useEffect(() => {
@@ -161,9 +186,16 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
       setIsRecording(true);
       setDuration(0);
 
-      // Start timer
+      // Start timer with auto-stop at max duration
       timerRef.current = window.setInterval(() => {
-        setDuration(prev => prev + 1);
+        setDuration(prev => {
+          const newDuration = prev + 1;
+          if (newDuration >= MAX_DURATION) {
+            stopRecording();
+            return MAX_DURATION;
+          }
+          return newDuration;
+        });
       }, 1000);
     } catch (error: any) {
       console.error("Recording error:", error);
@@ -221,13 +253,20 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
         audio_note_url: savedAudioUrl,
       });
 
+      // Add to voice notes list
+      setVoiceNotes(prev => [{
+        id: Date.now().toString(),
+        audio_url: savedAudioUrl,
+        created_at: new Date().toISOString()
+      }, ...prev]);
+
       if (onAudioSaved) {
         onAudioSaved(savedAudioUrl);
       }
 
       toast({
         title: "Voice note saved",
-        description: "Your recording has been saved successfully"
+        description: `Recording saved (${voiceNotes.length + 1}/${MAX_RECORDINGS})`
       });
     } catch (error: any) {
       console.error("Upload error:", error);
@@ -340,10 +379,15 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
   return (
     <div className="bg-card border border-border rounded-xl p-4 space-y-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-foreground">Voice Note</h4>
-        {uploading && (
-          <span className="text-xs text-primary animate-pulse">Saving...</span>
-        )}
+        <h4 className="text-sm font-medium text-foreground">Voice Notes</h4>
+        <div className="flex items-center gap-2">
+          {uploading && (
+            <span className="text-xs text-primary animate-pulse">Saving...</span>
+          )}
+          <span className="text-xs text-muted-foreground">
+            {voiceNotes.length}/{MAX_RECORDINGS}
+          </span>
+        </div>
       </div>
 
       {isRecording ? (
@@ -418,14 +462,52 @@ export function VoiceRecorder({ meetingId, existingAudioUrl, onAudioSaved }: Voi
             </Button>
           </div>
         </div>
+      ) : !canRecord ? (
+        <div className="text-center py-4">
+          <p className="text-sm text-muted-foreground mb-2">
+            Maximum of {MAX_RECORDINGS} voice notes reached
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Delete a note to record a new one
+          </p>
+        </div>
       ) : (
         <Button
           onClick={startRecording}
           className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6"
         >
           <Mic className="h-5 w-5 mr-2" />
-          Start Recording
+          Record (max {MAX_DURATION}s)
         </Button>
+      )}
+
+      {/* List of saved voice notes */}
+      {voiceNotes.length > 1 && (
+        <div className="space-y-2 pt-3 border-t border-border">
+          <p className="text-xs text-muted-foreground">Previous recordings:</p>
+          {voiceNotes.slice(1).map((note, index) => (
+            <div 
+              key={note.id}
+              className="flex items-center justify-between bg-secondary rounded-lg px-3 py-2"
+            >
+              <span className="text-sm text-foreground">
+                Recording {voiceNotes.length - index - 1}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setAudioUrl(note.audio_url);
+                  setPlaybackProgress(0);
+                  audioRef.current = null;
+                }}
+                className="text-primary"
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

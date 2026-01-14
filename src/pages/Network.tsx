@@ -5,7 +5,7 @@ import { Layout } from "@/components/Layout";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Search, Trash2, MoreVertical, Calendar, Tag } from "lucide-react";
+import { Search, Trash2, MoreVertical, Calendar, Tag, Zap } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -16,6 +16,9 @@ import { ConnectionLimitBadge } from "@/components/ConnectionLimitBadge";
 import { useAppCache, invalidateAppCache } from "@/hooks/useAppCache";
 import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 import { OptimizedAvatar } from "@/components/OptimizedAvatar";
+import { PlugModal } from "@/components/PlugModal";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PlugsList } from "@/components/PlugsList";
 
 type DateFilter = "all" | "week" | "month" | "year";
 
@@ -25,6 +28,8 @@ export default function Network() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showPlugModal, setShowPlugModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<"network" | "plugs">("network");
   const navigate = useNavigate();
   const { toast } = useToast();
   const { canAddConnection, getCurrentPlan } = useSubscription();
@@ -193,80 +198,108 @@ export default function Network() {
             <h1 className="text-2xl font-bold text-foreground mb-2">Network</h1>
             <p className="text-muted-foreground text-sm">Manage your professional connections</p>
           </div>
-          {isFree && <ConnectionLimitBadge />}
-        </div>
-
-        {/* Search Bar */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Search by name, email, company..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 bg-secondary border-border text-foreground"
-          />
-        </div>
-
-        {/* Filters - Compact Pill Style */}
-        <div className="flex gap-2 flex-wrap">
-          <div className="flex items-center gap-2 bg-secondary rounded-full px-3 py-1.5">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
-              <SelectTrigger className="w-[100px] h-7 border-0 bg-transparent p-0 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Time</SelectItem>
-                <SelectItem value="week">Past Week</SelectItem>
-                <SelectItem value="month">Past Month</SelectItem>
-                <SelectItem value="year">Past Year</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {companies.length > 0 && (
-            <div className="flex items-center gap-2 bg-secondary rounded-full px-3 py-1.5">
-              <Tag className="h-4 w-4 text-muted-foreground" />
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="w-[120px] h-7 border-0 bg-transparent p-0 text-sm">
-                  <SelectValue placeholder="Company" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Companies</SelectItem>
-                  {companies.map(company => (
-                    <SelectItem key={company} value={company}>{company}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {(dateFilter !== "all" || companyFilter !== "all") && (
+          <div className="flex items-center gap-2">
+            {isFree && <ConnectionLimitBadge />}
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setDateFilter("all");
-                setCompanyFilter("all");
-              }}
-              className="text-muted-foreground hover:text-foreground"
+              onClick={() => setShowPlugModal(true)}
+              variant="outline"
+              className="border-primary text-primary"
             >
-              Clear filters
+              <Zap className="h-4 w-4 mr-2" />
+              Plug
             </Button>
-          )}
+          </div>
         </div>
 
-        {/* Stats */}
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-          <span>{filteredConnections.length} connections</span>
-          {filteredConnections.length !== connections.length && (
-            <span className="text-primary">({connections.length} total)</span>
-          )}
-        </div>
+        {/* Tabs for Network and Plugs */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "network" | "plugs")}>
+          <TabsList className="grid w-full grid-cols-2 bg-secondary">
+            <TabsTrigger 
+              value="network" 
+              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            >
+              Connections
+            </TabsTrigger>
+            <TabsTrigger 
+              value="plugs"
+              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            >
+              Plugs
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Connections List */}
-        <div className="space-y-3">
+          <TabsContent value="network" className="space-y-4 mt-4">
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search by name, email, company..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 bg-secondary border-border text-foreground"
+              />
+            </div>
+
+            {/* Filters - Compact Pill Style */}
+            <div className="flex gap-2 flex-wrap">
+              <div className="flex items-center gap-2 bg-secondary rounded-full px-3 py-1.5">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
+                  <SelectTrigger className="w-[100px] h-7 border-0 bg-transparent p-0 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Time</SelectItem>
+                    <SelectItem value="week">Past Week</SelectItem>
+                    <SelectItem value="month">Past Month</SelectItem>
+                    <SelectItem value="year">Past Year</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {companies.length > 0 && (
+                <div className="flex items-center gap-2 bg-secondary rounded-full px-3 py-1.5">
+                  <Tag className="h-4 w-4 text-muted-foreground" />
+                  <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                    <SelectTrigger className="w-[120px] h-7 border-0 bg-transparent p-0 text-sm">
+                      <SelectValue placeholder="Company" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Companies</SelectItem>
+                      {companies.map(company => (
+                        <SelectItem key={company} value={company}>{company}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {(dateFilter !== "all" || companyFilter !== "all") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDateFilter("all");
+                    setCompanyFilter("all");
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  Clear filters
+                </Button>
+              )}
+            </div>
+
+            {/* Stats */}
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <span>{filteredConnections.length} connections</span>
+              {filteredConnections.length !== connections.length && (
+                <span className="text-primary">({connections.length} total)</span>
+              )}
+            </div>
+
+            {/* Connections List */}
+            <div className="space-y-3">
           {filteredConnections.length === 0 ? (
             <Card className="bg-card border-border p-8 text-center">
               <p className="text-muted-foreground">
@@ -334,7 +367,26 @@ export default function Network() {
               </Card>
             ))
           )}
-        </div>
+            </div>
+          </TabsContent>
+
+          {/* Plugs Tab */}
+          <TabsContent value="plugs" className="space-y-6 mt-4">
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                Received Introductions
+              </h3>
+              <PlugsList type="received" />
+            </div>
+            
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                Sent Plugs
+              </h3>
+              <PlugsList type="sent" />
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Delete Confirmation Dialog */}
@@ -359,6 +411,11 @@ export default function Network() {
         open={showUpgrade} 
         onOpenChange={setShowUpgrade}
         feature="connections"
+      />
+
+      <PlugModal
+        open={showPlugModal}
+        onOpenChange={setShowPlugModal}
       />
     </Layout>
   );
