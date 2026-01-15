@@ -1,10 +1,36 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// CORS configuration - restrict to allowed origins for authenticated endpoints
+const allowedOrigins = [
+  'https://buizly.lovable.app',
+  'https://lovable.app',
+  'https://lovable.dev',
+  'https://buizly.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:8080',
+];
+
+const allowedOriginPatterns = [
+  /^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.lovable\.app$/,
+  /^https:\/\/preview--[a-z0-9-]+\.lovable\.app$/,
+  /^https:\/\/id-preview--[a-z0-9-]+\.lovable\.app$/,
+];
+
+function getCorsHeaders(req: Request): { [key: string]: string } {
+  const origin = req.headers.get('origin') || '';
+  
+  const isAllowed = allowedOrigins.includes(origin) || 
+    allowedOriginPatterns.some(pattern => pattern.test(origin));
+  
+  const allowOrigin = isAllowed ? origin : 'https://buizly.lovable.app';
+  
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
 
 interface MeetingInvitationRequest {
   meetingId: string;
@@ -54,6 +80,7 @@ const escapeHtml = (str: string): string => {
 
 const handler = async (req: Request): Promise<Response> => {
   console.log("[send-meeting-invitation] Request received");
+  const corsHeaders = getCorsHeaders(req);
 
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -97,7 +124,7 @@ const handler = async (req: Request): Promise<Response> => {
     console.log(`[send-meeting-invitation] Sending to ${invitation.participantEmail} by user ${user.id}`);
 
     // Use the production URL for better email deliverability
-    const appUrl = Deno.env.get("APP_URL") || 'https://preview--buizly-digital-business-card.lovable.app';
+    const appUrl = Deno.env.get("APP_URL") || 'https://buizly.lovable.app';
     
     // Send email using Resend via fetch
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
@@ -335,7 +362,7 @@ const handler = async (req: Request): Promise<Response> => {
     // Return generic error message to avoid exposing internal details
     return new Response(
       JSON.stringify({ error: "Unable to send invitation. Please try again later." }),
-      { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(req) } }
     );
   }
 };

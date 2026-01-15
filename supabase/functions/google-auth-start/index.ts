@@ -1,12 +1,40 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// CORS configuration - restrict to allowed origins for authenticated endpoints
+const allowedOrigins = [
+  'https://buizly.lovable.app',
+  'https://lovable.app',
+  'https://lovable.dev',
+  'https://buizly.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:8080',
+];
+
+const allowedOriginPatterns = [
+  /^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.lovable\.app$/,
+  /^https:\/\/preview--[a-z0-9-]+\.lovable\.app$/,
+  /^https:\/\/id-preview--[a-z0-9-]+\.lovable\.app$/,
+];
+
+function getCorsHeaders(req: Request): { [key: string]: string } {
+  const origin = req.headers.get('origin') || '';
+  
+  const isAllowed = allowedOrigins.includes(origin) || 
+    allowedOriginPatterns.some(pattern => pattern.test(origin));
+  
+  const allowOrigin = isAllowed ? origin : 'https://buizly.lovable.app';
+  
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
 
 serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -106,7 +134,7 @@ serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ error: "Failed to initiate Google authentication" }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         status: 500,
       }
     );
