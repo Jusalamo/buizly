@@ -775,6 +775,10 @@ export type Database = {
       can_add_connection: { Args: { p_user_id: string }; Returns: boolean }
       can_view_profile: { Args: { profile_id: string }; Returns: boolean }
       get_current_month_usage: { Args: { p_user_id: string }; Returns: number }
+      get_profile_visibility: {
+        Args: { target_user_id: string }
+        Returns: string
+      }
       increment_connection_count: {
         Args: { p_user_id: string }
         Returns: number
