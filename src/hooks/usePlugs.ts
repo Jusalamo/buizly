@@ -136,16 +136,16 @@ export function usePlugs() {
     }
   }, []);
 
-  const createPlug = useCallback(async (participantIds: string[], message?: string) => {
+  const createPlug = useCallback(async (connectionIds: string[], message?: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      if (participantIds.length < 2) {
+      if (connectionIds.length < 2) {
         throw new Error('At least 2 contacts are required');
       }
 
-      if (participantIds.length > 5) {
+      if (connectionIds.length > 5) {
         throw new Error('Maximum 5 contacts allowed');
       }
 
@@ -154,7 +154,29 @@ export function usePlugs() {
         .from('profiles')
         .select('full_name')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
+
+      // Get connection details to find associated user emails
+      const { data: connectionDetails, error: connError } = await supabase
+        .from('connections')
+        .select('id, connection_name, connection_email')
+        .in('id', connectionIds);
+
+      if (connError) throw connError;
+
+      // Find user profiles by email (connections might be linked to real users)
+      const emails = connectionDetails?.map(c => c.connection_email).filter(Boolean) || [];
+      
+      let userProfiles: { id: string; email: string; full_name: string }[] = [];
+      if (emails.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, email, full_name')
+          .in('email', emails);
+        userProfiles = profiles || [];
+      }
+
+      const emailToUserId = new Map(userProfiles.map(p => [p.email, p.id]));
 
       // Create plug
       const { data: plug, error: plugError } = await supabase
@@ -168,59 +190,74 @@ export function usePlugs() {
 
       if (plugError) throw plugError;
 
-      // Add participants
-      const participantInserts = participantIds.map(userId => ({
-        plug_id: plug.id,
-        user_id: userId
-      }));
+      // Add participants - only those who have user accounts
+      const participantUserIds: string[] = [];
+      const connectionNamesForNotification: string[] = [];
+      
+      for (const conn of connectionDetails || []) {
+        const userId = conn.connection_email ? emailToUserId.get(conn.connection_email) : null;
+        if (userId) {
+          participantUserIds.push(userId);
+        }
+        connectionNamesForNotification.push(conn.connection_name);
+      }
 
-      const { error: participantsError } = await supabase
-        .from('plug_participants')
-        .insert(participantInserts);
+      if (participantUserIds.length > 0) {
+        const participantInserts = participantUserIds.map(userId => ({
+          plug_id: plug.id,
+          user_id: userId
+        }));
 
-      if (participantsError) throw participantsError;
+        const { error: participantsError } = await supabase
+          .from('plug_participants')
+          .insert(participantInserts);
 
-      // Get participant names for notification
-      const { data: participantProfiles } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', participantIds);
+        if (participantsError) {
+          console.error('Participant insert error:', participantsError);
+          // Continue even if participants fail - the plug was created
+        }
 
-      const profileMap = new Map(participantProfiles?.map(p => [p.id, p.full_name]) || []);
+        // Create notifications for users who have accounts
+        const profileMap = new Map(userProfiles.map(p => [p.id, p.full_name]));
+        
+        for (const participantId of participantUserIds) {
+          const otherNames = participantUserIds
+            .filter(id => id !== participantId)
+            .map(id => profileMap.get(id) || 'Someone')
+            .join(', ');
 
-      // Create notifications for all participants
-      for (const participantId of participantIds) {
-        const otherNames = participantIds
-          .filter(id => id !== participantId)
-          .map(id => profileMap.get(id) || 'Someone')
-          .join(', ');
-
-        await supabase.functions.invoke('create-notification', {
-          body: {
-            user_id: participantId,
-            type: 'plug_request',
-            title: 'New Introduction',
-            message: `${myProfile?.full_name || 'Someone'} wants to introduce you to ${otherNames}`,
-            data: {
-              plug_id: plug.id,
-              sender_id: user.id,
-              sender_name: myProfile?.full_name
-            }
+          try {
+            await supabase.functions.invoke('create-notification', {
+              body: {
+                user_id: participantId,
+                type: 'plug_request',
+                title: 'New Introduction',
+                message: `${myProfile?.full_name || 'Someone'} wants to introduce you to ${otherNames}`,
+                data: {
+                  plug_id: plug.id,
+                  sender_id: user.id,
+                  sender_name: myProfile?.full_name
+                }
+              }
+            });
+          } catch (notifError) {
+            console.error('Notification error:', notifError);
           }
-        });
+        }
       }
 
       toast({
         title: 'Plug sent!',
-        description: `Introduction sent to ${participantIds.length} contacts`
+        description: `Introduction created for ${connectionNamesForNotification.join(', ')}`
       });
 
       await fetchPlugs();
       return { success: true, plug };
     } catch (error: any) {
+      console.error('Create plug error:', error);
       toast({
-        title: 'Error',
-        description: error.message,
+        title: 'Error creating plug',
+        description: error.message || 'Failed to create introduction',
         variant: 'destructive'
       });
       return { success: false };
