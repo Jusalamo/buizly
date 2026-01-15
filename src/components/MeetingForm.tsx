@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, X, UserPlus, Mail } from "lucide-react";
+import { Plus, X, Mail, CalendarIcon, Clock, MapPin, Image, FileText, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -22,6 +27,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useMeetings } from "@/hooks/useMeetings";
 import { supabase } from "@/integrations/supabase/client";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 import type { Connection, Meeting } from "@/types/database";
 
 const timeSlots = [
@@ -61,6 +68,9 @@ export function MeetingForm({ open, onOpenChange, editMeeting, prefillData }: Me
   const [selectedConnection, setSelectedConnection] = useState("");
   const [loading, setLoading] = useState(false);
   const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [meetingPhotos, setMeetingPhotos] = useState<string[]>([]);
+  const [notes, setNotes] = useState("");
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const { createMeeting, updateMeeting } = useMeetings();
   const { toast } = useToast();
@@ -144,6 +154,14 @@ export function MeetingForm({ open, onOpenChange, editMeeting, prefillData }: Me
     setParticipants(prev => prev.filter(p => p.email !== email));
   };
 
+  const handlePhotoUpload = (urls: string[]) => {
+    setMeetingPhotos(prev => [...prev, ...urls]);
+  };
+
+  const removePhoto = (index: number) => {
+    setMeetingPhotos(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async () => {
     if (!title.trim()) {
       toast({
@@ -166,10 +184,17 @@ export function MeetingForm({ open, onOpenChange, editMeeting, prefillData }: Me
     setLoading(true);
 
     try {
+      // Combine description, notes, and photos into a structured description
+      const fullDescription = JSON.stringify({
+        description: description || "",
+        notes: notes || "",
+        photos: meetingPhotos
+      });
+
       if (editMeeting) {
         await updateMeeting(editMeeting.id, {
           title,
-          description: description || null,
+          description: fullDescription,
           meeting_date: date.toISOString().split("T")[0],
           meeting_time: time,
           location: location || null,
@@ -182,7 +207,7 @@ export function MeetingForm({ open, onOpenChange, editMeeting, prefillData }: Me
       } else {
         await createMeeting({
           title,
-          description,
+          description: fullDescription,
           meeting_date: date.toISOString().split("T")[0],
           meeting_time: time,
           location,
@@ -217,6 +242,8 @@ export function MeetingForm({ open, onOpenChange, editMeeting, prefillData }: Me
     setLocation("");
     setParticipants([]);
     setSelectedConnection("");
+    setMeetingPhotos([]);
+    setNotes("");
   };
 
   return (
@@ -240,51 +267,69 @@ export function MeetingForm({ open, onOpenChange, editMeeting, prefillData }: Me
             />
           </div>
 
-          {/* Description */}
-          <div className="space-y-2">
-            <Label className="text-foreground">Description</Label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Meeting description"
-              className="bg-secondary border-border text-foreground min-h-[80px]"
-            />
-          </div>
-
-          {/* Calendar */}
-          <div className="space-y-2">
-            <Label className="text-foreground">Date *</Label>
-            <div className="bg-card-surface rounded-xl p-4">
-              <Calendar
-                mode="single"
-                selected={date}
-                onSelect={setDate}
-                disabled={(date) => date < new Date()}
-                className="mx-auto"
-              />
+          {/* Date & Time Row */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Date Picker with Popover */}
+            <div className="space-y-2">
+              <Label className="text-foreground flex items-center gap-1">
+                <CalendarIcon className="h-3.5 w-3.5" />
+                Date *
+              </Label>
+              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal bg-secondary border-border",
+                      !date && "text-muted-foreground"
+                    )}
+                  >
+                    {date ? format(date, "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 bg-card border-border" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={date}
+                    onSelect={(selectedDate) => {
+                      setDate(selectedDate);
+                      setCalendarOpen(false);
+                    }}
+                    disabled={(date) => date < new Date()}
+                    initialFocus
+                    className="pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
-          </div>
 
-          {/* Time */}
-          <div className="space-y-2">
-            <Label className="text-foreground">Time *</Label>
-            <Select value={time} onValueChange={setTime}>
-              <SelectTrigger className="bg-secondary border-border text-foreground">
-                <SelectValue placeholder="Select time" />
-              </SelectTrigger>
-              <SelectContent className="bg-card border-border">
-                {timeSlots.map((slot) => (
-                  <SelectItem key={slot} value={slot} className="text-foreground">
-                    {slot}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Time Picker */}
+            <div className="space-y-2">
+              <Label className="text-foreground flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" />
+                Time *
+              </Label>
+              <Select value={time} onValueChange={setTime}>
+                <SelectTrigger className="bg-secondary border-border text-foreground">
+                  <SelectValue placeholder="Select time" />
+                </SelectTrigger>
+                <SelectContent className="bg-card border-border max-h-[200px]">
+                  {timeSlots.map((slot) => (
+                    <SelectItem key={slot} value={slot} className="text-foreground">
+                      {slot}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* Location */}
           <div className="space-y-2">
-            <Label className="text-foreground">Location</Label>
+            <Label className="text-foreground flex items-center gap-1">
+              <MapPin className="h-3.5 w-3.5" />
+              Location
+            </Label>
             <Input
               value={location}
               onChange={(e) => setLocation(e.target.value)}
@@ -295,7 +340,10 @@ export function MeetingForm({ open, onOpenChange, editMeeting, prefillData }: Me
 
           {/* Participants */}
           <div className="space-y-2">
-            <Label className="text-foreground">Participants</Label>
+            <Label className="text-foreground flex items-center gap-1">
+              <Users className="h-3.5 w-3.5" />
+              Participants
+            </Label>
             
             {/* Participant list */}
             {participants.length > 0 && (
@@ -382,6 +430,107 @@ export function MeetingForm({ open, onOpenChange, editMeeting, prefillData }: Me
                 <Mail className="h-4 w-4 mr-2" />
                 Add by email
               </Button>
+            )}
+          </div>
+
+          {/* Description & Notes (Consolidated) */}
+          <div className="space-y-2">
+            <Label className="text-foreground flex items-center gap-1">
+              <FileText className="h-3.5 w-3.5" />
+              Description & Notes
+            </Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Meeting description and agenda..."
+              className="bg-secondary border-border text-foreground min-h-[80px]"
+            />
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Additional notes for participants..."
+              className="bg-secondary border-border text-foreground min-h-[60px]"
+            />
+          </div>
+
+          {/* Photo Upload */}
+          <div className="space-y-2">
+            <Label className="text-foreground flex items-center gap-1">
+              <Image className="h-3.5 w-3.5" />
+              Photos & Media
+            </Label>
+            
+            {/* Existing photos */}
+            {meetingPhotos.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {meetingPhotos.map((url, index) => (
+                  <div key={index} className="relative group">
+                    <img 
+                      src={url} 
+                      alt={`Meeting photo ${index + 1}`}
+                      className="h-16 w-16 object-cover rounded-lg border border-border"
+                    />
+                    <button
+                      onClick={() => removePhoto(index)}
+                      className="absolute -top-1 -right-1 p-1 bg-destructive rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="h-3 w-3 text-destructive-foreground" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {meetingPhotos.length < 5 && (
+              <div className="flex gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  id="meeting-photo-upload"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    
+                    try {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) throw new Error("Not authenticated");
+                      
+                      const fileName = `${user.id}/temp/photo-${Date.now()}.${file.name.split(".").pop()}`;
+                      
+                      const { error: uploadError } = await supabase.storage
+                        .from("meeting-media")
+                        .upload(fileName, file, { contentType: file.type });
+                      
+                      if (uploadError) throw uploadError;
+                      
+                      const { data: signedUrlData } = await supabase.storage
+                        .from("meeting-media")
+                        .createSignedUrl(fileName, 31536000);
+                      
+                      if (signedUrlData?.signedUrl) {
+                        setMeetingPhotos(prev => [...prev, signedUrlData.signedUrl]);
+                      }
+                    } catch (error: any) {
+                      toast({
+                        title: "Upload failed",
+                        description: error.message,
+                        variant: "destructive"
+                      });
+                    }
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => document.getElementById('meeting-photo-upload')?.click()}
+                  className="flex-1 border-border text-foreground"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Photo ({meetingPhotos.length}/5)
+                </Button>
+              </div>
             )}
           </div>
 
