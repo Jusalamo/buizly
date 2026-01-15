@@ -51,6 +51,13 @@ export type Database = {
             foreignKeyName: "connection_requests_requester_id_fkey"
             columns: ["requester_id"]
             isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connection_requests_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
             referencedRelation: "profiles_search"
             referencedColumns: ["id"]
           },
@@ -59,6 +66,13 @@ export type Database = {
             columns: ["target_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connection_requests_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
             referencedColumns: ["id"]
           },
           {
@@ -122,6 +136,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connections_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
             referencedColumns: ["id"]
           },
           {
@@ -221,6 +242,13 @@ export type Database = {
             foreignKeyName: "meeting_participants_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles_search"
             referencedColumns: ["id"]
           },
@@ -300,6 +328,13 @@ export type Database = {
             foreignKeyName: "meetings_organizer_id_fkey"
             columns: ["organizer_id"]
             isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_organizer_id_fkey"
+            columns: ["organizer_id"]
+            isOneToOne: false
             referencedRelation: "profiles_search"
             referencedColumns: ["id"]
           },
@@ -315,6 +350,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
             referencedColumns: ["id"]
           },
           {
@@ -363,6 +405,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
             referencedColumns: ["id"]
           },
           {
@@ -418,6 +467,13 @@ export type Database = {
             foreignKeyName: "plug_participants_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plug_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles_search"
             referencedColumns: ["id"]
           },
@@ -451,6 +507,13 @@ export type Database = {
             columns: ["sender_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plugs_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
             referencedColumns: ["id"]
           },
           {
@@ -496,6 +559,13 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_views_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
             referencedColumns: ["id"]
           },
           {
@@ -616,6 +686,13 @@ export type Database = {
             foreignKeyName: "subscriptions_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
             referencedRelation: "profiles_search"
             referencedColumns: ["id"]
           },
@@ -652,6 +729,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "usage_tracking_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
             referencedColumns: ["id"]
           },
           {
@@ -724,6 +808,13 @@ export type Database = {
             foreignKeyName: "user_settings_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
             referencedRelation: "profiles_search"
             referencedColumns: ["id"]
           },
@@ -731,6 +822,48 @@ export type Database = {
       }
     }
     Views: {
+      profiles_public: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          company: string | null
+          created_at: string | null
+          full_name: string | null
+          id: string | null
+          instagram_url: string | null
+          job_title: string | null
+          linkedin_url: string | null
+          updated_at: string | null
+          website: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          company?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string | null
+          instagram_url?: string | null
+          job_title?: string | null
+          linkedin_url?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          company?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string | null
+          instagram_url?: string | null
+          job_title?: string | null
+          linkedin_url?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Relationships: []
+      }
       profiles_search: {
         Row: {
           avatar_url: string | null
@@ -770,6 +903,73 @@ export type Database = {
         }
         Relationships: []
       }
+      user_settings_safe: {
+        Row: {
+          created_at: string | null
+          email_notifications: boolean | null
+          google_calendar_connected: boolean | null
+          ical_url: string | null
+          id: string | null
+          onboarding_completed: boolean | null
+          outlook_calendar_connected: boolean | null
+          profile_visibility: string | null
+          push_notifications: boolean | null
+          theme: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email_notifications?: boolean | null
+          google_calendar_connected?: boolean | null
+          ical_url?: string | null
+          id?: string | null
+          onboarding_completed?: boolean | null
+          outlook_calendar_connected?: boolean | null
+          profile_visibility?: string | null
+          push_notifications?: boolean | null
+          theme?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email_notifications?: boolean | null
+          google_calendar_connected?: boolean | null
+          ical_url?: string | null
+          id?: string | null
+          onboarding_completed?: boolean | null
+          outlook_calendar_connected?: boolean | null
+          profile_visibility?: string | null
+          push_notifications?: boolean | null
+          theme?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles_search"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       can_add_connection: { Args: { p_user_id: string }; Returns: boolean }
@@ -779,9 +979,14 @@ export type Database = {
         Args: { target_user_id: string }
         Returns: string
       }
+      get_user_oauth_token: { Args: { token_type: string }; Returns: string }
       increment_connection_count: {
         Args: { p_user_id: string }
         Returns: number
+      }
+      set_user_oauth_token: {
+        Args: { token_type: string; token_value: string }
+        Returns: undefined
       }
     }
     Enums: {
