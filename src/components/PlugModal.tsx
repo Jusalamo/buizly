@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { OptimizedAvatar } from "@/components/OptimizedAvatar";
 import { useAppCache } from "@/hooks/useAppCache";
 import { usePlugs } from "@/hooks/usePlugs";
-import { Zap, Plus, X, Search, Users, ArrowRight } from "lucide-react";
+import { Plug, Plus, X, Search, Users, ArrowRight } from "lucide-react";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 
 interface PlugModalProps {
@@ -84,7 +84,7 @@ export function PlugModal({ open, onOpenChange }: PlugModalProps) {
       <DialogContent className="sm:max-w-md bg-card border-border">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-foreground">
-            <Zap className="h-5 w-5 text-primary" />
+            <Plug className="h-5 w-5 text-primary" />
             Create a Plug
           </DialogTitle>
           <DialogDescription>
@@ -127,7 +127,7 @@ export function PlugModal({ open, onOpenChange }: PlugModalProps) {
                     </p>
                   </div>
                   {index < selectedContactDetails.length - 1 && (
-                    <Zap className="h-4 w-4 text-primary mx-1" />
+                    <Plug className="h-4 w-4 text-primary mx-1" />
                   )}
                 </div>
               ))}

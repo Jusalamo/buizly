@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, Check } from "lucide-react";
+import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -61,12 +61,6 @@ export function NotificationBell() {
               Mark all read
             </Button>
           )}
-        </div>
-        
-        <div className="px-3 py-2 border-b border-border bg-secondary/30">
-          <p className="text-xs text-muted-foreground flex items-center gap-1">
-            <span>💡</span> Swipe left or right to dismiss
-          </p>
         </div>
         
         <ScrollArea className="h-[350px]">

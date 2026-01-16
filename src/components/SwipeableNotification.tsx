@@ -1,7 +1,5 @@
 import { useSwipeable } from 'react-swipeable';
 import { useState, useRef } from 'react';
-import { Check, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { formatDistanceToNow } from 'date-fns';
 import type { Notification } from '@/types/database';
 
@@ -16,7 +14,7 @@ const notificationIcons: Record<string, string> = {
   profile_shared: "📤",
   new_connection: "🤝",
   follow_up_scheduled: "📆",
-  plug_request: "⚡"
+  plug_request: "🔌"
 };
 
 interface SwipeableNotificationProps {
@@ -75,11 +73,12 @@ export function SwipeableNotification({
     setIsDismissing(true);
     setOffset(direction === 'left' ? -cardWidth : cardWidth);
     
-    // Mark as read and call dismiss after animation
+    // Mark as read and delete after animation
     setTimeout(() => {
       if (!notification.read) {
         onMarkRead();
       }
+      onDelete();
       onDismiss();
     }, 200);
   };
@@ -97,19 +96,17 @@ export function SwipeableNotification({
       <div className="absolute inset-0 flex items-center justify-between px-4">
         <div className={`transition-opacity duration-150 ${showRightIndicator ? 'opacity-100' : 'opacity-0'}`}>
           <div className="flex items-center gap-2 text-primary">
-            <Check className="h-5 w-5" />
-            <span className="text-sm font-medium">Mark Read</span>
+            <span className="text-sm font-medium">Dismiss</span>
           </div>
         </div>
         <div className={`transition-opacity duration-150 ${showLeftIndicator ? 'opacity-100' : 'opacity-0'}`}>
           <div className="flex items-center gap-2 text-primary">
             <span className="text-sm font-medium">Dismiss</span>
-            <Check className="h-5 w-5" />
           </div>
         </div>
       </div>
 
-      {/* Swipeable card */}
+      {/* Swipeable card - no check/trash buttons, just swipe */}
       <div
         ref={cardRef}
         {...handlers}
@@ -140,32 +137,10 @@ export function SwipeableNotification({
               })}
             </p>
           </div>
-          <div className="flex gap-1 shrink-0">
-            {!notification.read && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMarkRead();
-                }}
-              >
-                <Check className="h-4 w-4 text-primary" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-            >
-              <Trash2 className="h-4 w-4 text-muted-foreground" />
-            </Button>
-          </div>
+          {/* Unread indicator dot */}
+          {!notification.read && (
+            <div className="w-2 h-2 rounded-full bg-primary shrink-0 mt-2" />
+          )}
         </div>
       </div>
     </div>

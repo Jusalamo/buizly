@@ -5,7 +5,7 @@ import { Layout } from "@/components/Layout";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Search, Trash2, MoreVertical, Calendar, Tag, Zap } from "lucide-react";
+import { Search, Trash2, MoreVertical, Calendar, Tag, Plug } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -205,7 +205,7 @@ export default function Network() {
               variant="outline"
               className="border-primary text-primary"
             >
-              <Zap className="h-4 w-4 mr-2" />
+              <Plug className="h-4 w-4 mr-2" />
               Plug
             </Button>
           </div>
