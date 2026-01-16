@@ -1,16 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
-  Palette, Lock, Check, QrCode, CreditCard, Upload, Sparkles,
-  ChevronRight
+  Palette, Check, QrCode, CreditCard, Upload, Sparkles
 } from "lucide-react";
-import { useSubscription } from "@/hooks/useSubscription";
-import { UpgradePrompt } from "@/components/UpgradePrompt";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 const CARD_TEMPLATES = [
@@ -71,9 +67,6 @@ interface BusinessCardCustomizerProps {
 }
 
 export function BusinessCardCustomizer({ onSave }: BusinessCardCustomizerProps) {
-  const { getCurrentPlan } = useSubscription();
-  const isPro = getCurrentPlan() === "pro" || getCurrentPlan() === "business";
-  const [showUpgrade, setShowUpgrade] = useState(false);
   const [activeTab, setActiveTab] = useState<"templates" | "qr" | "branding">("templates");
   const { toast } = useToast();
   
@@ -117,65 +110,6 @@ export function BusinessCardCustomizer({ onSave }: BusinessCardCustomizerProps) 
       setSaving(false);
     }
   };
-
-  if (!isPro) {
-    return (
-      <Card className="bg-card border-border p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <CreditCard className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-foreground">Business Card Customization</h3>
-            <p className="text-sm text-muted-foreground">Customize your digital business card</p>
-          </div>
-        </div>
-
-        <div className="relative">
-          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
-            <div className="text-center p-4">
-              <Lock className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground mb-3">Pro feature</p>
-              <Button
-                size="sm"
-                onClick={() => setShowUpgrade(true)}
-                className="bg-primary text-primary-foreground"
-              >
-                Upgrade to Pro
-              </Button>
-            </div>
-          </div>
-
-          {/* Preview (blurred) */}
-          <div className="opacity-50 pointer-events-none">
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              {CARD_TEMPLATES.slice(0, 3).map((template) => (
-                <div
-                  key={template.id}
-                  className="aspect-[1.6/1] rounded-lg border border-border p-3"
-                  style={{ backgroundColor: template.background }}
-                >
-                  <div
-                    className="w-6 h-6 rounded"
-                    style={{ backgroundColor: template.primary }}
-                  />
-                  <p className="text-xs mt-2" style={{ color: template.primary }}>
-                    {template.name}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <UpgradePrompt
-          open={showUpgrade}
-          onOpenChange={setShowUpgrade}
-          feature="qr_customization"
-        />
-      </Card>
-    );
-  }
 
   return (
     <Card className="bg-card border-border p-6">
