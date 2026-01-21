@@ -1,29 +1,52 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { ParticipantsList } from "@/components/ParticipantsList";
-import { VoiceRecorder } from "@/components/VoiceRecorder";
-import { PhotoUploader } from "@/components/PhotoUploader";
 import { MeetingForm } from "@/components/MeetingForm";
 import { MeetingDetailSkeleton } from "@/components/skeletons/PageSkeletons";
 import { useToast } from "@/hooks/use-toast";
 import { useMeetings } from "@/hooks/useMeetings";
 import { 
-  ArrowLeft, Calendar, Clock, MapPin, Edit, Trash2, 
-  UserPlus, Copy, ExternalLink 
+  ArrowLeft, Calendar, Clock, MapPin, Edit, FileText, Image,
+  ExternalLink, X
 } from "lucide-react";
 import type { Meeting, MeetingStatus } from "@/types/database";
 
+// Use semantic CSS tokens for status colors
 const statusColors: Record<MeetingStatus, string> = {
-  pending: "bg-yellow-500/20 text-yellow-500",
-  confirmed: "bg-green-500/20 text-green-500",
-  declined: "bg-red-500/20 text-red-500",
-  cancelled: "bg-gray-500/20 text-gray-500",
+  pending: "bg-status-warning/20 text-status-warning",
+  confirmed: "bg-status-success/20 text-status-success",
+  declined: "bg-status-error/20 text-status-error",
+  cancelled: "bg-muted text-muted-foreground",
   rescheduled: "bg-blue-500/20 text-blue-500"
 };
+
+// Helper to parse meeting description JSON
+interface ParsedDescription {
+  description: string;
+  notes: string;
+  photos: string[];
+}
+
+function parseDescription(descriptionJson: string | null): ParsedDescription {
+  if (!descriptionJson) return { description: "", notes: "", photos: [] };
+  
+  try {
+    const parsed = JSON.parse(descriptionJson);
+    return {
+      description: parsed.description || "",
+      notes: parsed.notes || "",
+      photos: Array.isArray(parsed.photos) ? parsed.photos : []
+    };
+  } catch {
+    // If not valid JSON, treat as plain text description
+    return { description: descriptionJson, notes: "", photos: [] };
+  }
+}
 
 export default function MeetingDetail() {
   const { id } = useParams();
@@ -166,9 +189,56 @@ export default function MeetingDetail() {
             )}
           </div>
 
-          {meeting.description && (
-            <p className="mt-4 text-foreground">{meeting.description}</p>
-          )}
+          {/* Description, Notes & Photos - Consolidated */}
+          {(() => {
+            const parsed = parseDescription(meeting.description);
+            const hasContent = parsed.description || parsed.notes || parsed.photos.length > 0;
+            
+            if (!hasContent) return null;
+            
+            return (
+              <div className="mt-4 space-y-4">
+                {parsed.description && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium text-foreground">Description</span>
+                    </div>
+                    <p className="text-foreground">{parsed.description}</p>
+                  </div>
+                )}
+                
+                {parsed.notes && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-foreground">Notes</span>
+                    </div>
+                    <p className="text-muted-foreground">{parsed.notes}</p>
+                  </div>
+                )}
+                
+                {parsed.photos.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Image className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium text-foreground">Photos</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {parsed.photos.map((url, index) => (
+                        <img
+                          key={index}
+                          src={url}
+                          alt={`Meeting photo ${index + 1}`}
+                          className="h-20 w-20 object-cover rounded-lg border border-border"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <Button
             onClick={() => window.open(generateCalendarLink(), "_blank")}
@@ -184,12 +254,6 @@ export default function MeetingDetail() {
           <ParticipantsList meetingId={meeting.id} isOrganizer={isOrganizer} />
         </div>
 
-        {/* Voice Notes */}
-        <VoiceRecorder meetingId={meeting.id} />
-
-        {/* Photos */}
-        <PhotoUploader meetingId={meeting.id} />
-
         {/* Actions */}
         <div className="space-y-3">
           <Button
@@ -200,7 +264,7 @@ export default function MeetingDetail() {
           </Button>
 
           {isOrganizer && meeting.status !== "cancelled" && (
-            <Button onClick={handleCancel} variant="outline" className="w-full border-red-500 text-red-500">
+            <Button onClick={handleCancel} variant="outline" className="w-full border-destructive text-destructive hover:bg-destructive/10">
               Cancel Meeting
             </Button>
           )}

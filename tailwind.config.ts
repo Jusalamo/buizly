@@ -43,12 +43,18 @@ export default {
   				DEFAULT: 'hsl(var(--popover))',
   				foreground: 'hsl(var(--popover-foreground))'
   			},
-  			card: {
-  				DEFAULT: 'hsl(var(--card))',
-  				foreground: 'hsl(var(--card-foreground))'
-  			},
-  			'neon-glow': 'hsl(var(--neon-glow))',
-  			'card-surface': 'hsl(var(--card-surface))'
+			card: {
+				DEFAULT: 'hsl(var(--card))',
+				foreground: 'hsl(var(--card-foreground))'
+			},
+			'neon-glow': 'hsl(var(--neon-glow))',
+			'card-surface': 'hsl(var(--card-surface))',
+			status: {
+				success: 'hsl(var(--status-success))',
+				warning: 'hsl(var(--status-warning))',
+				error: 'hsl(var(--status-error))',
+				info: 'hsl(var(--status-info))'
+			}
   		},
   		borderRadius: {
   			lg: 'var(--radius)',

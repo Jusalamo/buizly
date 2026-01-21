@@ -245,47 +245,72 @@ export function useConnectionRequests() {
       if (!user) throw new Error('Not authenticated');
 
       // Get the request
-      const { data: request } = await supabase
+      const { data: request, error: requestError } = await supabase
         .from('connection_requests')
         .select('*')
         .eq('id', requestId)
         .single();
 
+      if (requestError) throw requestError;
       if (!request) throw new Error('Request not found');
 
       // Get requester profile
-      const { data: requesterProfile } = await supabase
+      const { data: requesterProfile, error: reqProfileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', request.requester_id)
         .single();
 
+      if (reqProfileError) throw reqProfileError;
       if (!requesterProfile) throw new Error('Requester profile not found');
 
       // Get my profile
-      const { data: myProfile } = await supabase
+      const { data: myProfile, error: myProfileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
 
-      // Add requester to my connections with full details
-      await supabase.from('connections').insert({
-        user_id: user.id,
-        connection_name: requesterProfile.full_name,
-        connection_email: requesterProfile.email,
-        connection_title: requesterProfile.job_title,
-        connection_company: requesterProfile.company,
-        connection_phone: requesterProfile.phone,
-        connection_avatar_url: requesterProfile.avatar_url,
-        connection_linkedin: requesterProfile.linkedin_url,
-        connection_instagram: (requesterProfile as any).instagram_url,
-        connection_gallery_photos: (requesterProfile as any).gallery_photos,
-      });
+      if (myProfileError) throw myProfileError;
+      if (!myProfile) throw new Error('Your profile not found');
 
-      // Add me to requester's connections with full details (RECIPROCAL)
-      if (myProfile) {
-        await supabase.from('connections').insert({
+      // Check if connections already exist to prevent duplicates
+      const { data: existingConnections } = await supabase
+        .from('connections')
+        .select('id, user_id, connection_email')
+        .or(`and(user_id.eq.${user.id},connection_email.eq.${requesterProfile.email}),and(user_id.eq.${request.requester_id},connection_email.eq.${myProfile.email})`);
+
+      const myConnectionExists = existingConnections?.some(c => 
+        c.user_id === user.id && c.connection_email === requesterProfile.email
+      );
+      const theirConnectionExists = existingConnections?.some(c => 
+        c.user_id === request.requester_id && c.connection_email === myProfile.email
+      );
+
+      // Add requester to my connections (if not already exists)
+      if (!myConnectionExists) {
+        const { error: myConnError } = await supabase.from('connections').insert({
+          user_id: user.id,
+          connection_name: requesterProfile.full_name,
+          connection_email: requesterProfile.email,
+          connection_title: requesterProfile.job_title,
+          connection_company: requesterProfile.company,
+          connection_phone: requesterProfile.phone,
+          connection_avatar_url: requesterProfile.avatar_url,
+          connection_linkedin: requesterProfile.linkedin_url,
+          connection_instagram: (requesterProfile as any).instagram_url,
+          connection_gallery_photos: (requesterProfile as any).gallery_photos,
+        });
+        
+        if (myConnError) {
+          console.error('Error adding connection to my list:', myConnError);
+          throw new Error(`Failed to add ${requesterProfile.full_name} to your connections`);
+        }
+      }
+
+      // Add me to requester's connections (RECIPROCAL - if not already exists)
+      if (!theirConnectionExists) {
+        const { error: theirConnError } = await supabase.from('connections').insert({
           user_id: request.requester_id,
           connection_name: myProfile.full_name,
           connection_email: myProfile.email,
@@ -297,6 +322,11 @@ export function useConnectionRequests() {
           connection_instagram: (myProfile as any).instagram_url,
           connection_gallery_photos: (myProfile as any).gallery_photos,
         });
+        
+        if (theirConnError) {
+          console.error('Error adding reciprocal connection:', theirConnError);
+          throw new Error(`Failed to add you to ${requesterProfile.full_name}'s connections`);
+        }
       }
 
       // DELETE the request after acceptance (clear it from the list)
@@ -312,19 +342,23 @@ export function useConnectionRequests() {
       }
 
       // Notify requester that connection was accepted (via edge function)
-      await supabase.functions.invoke('create-notification', {
-        body: {
-          user_id: request.requester_id,
-          type: 'new_connection',
-          title: 'Connection Accepted!',
-          message: `${myProfile?.full_name || 'Someone'} accepted your connection request`,
-          data: { 
-            connection_id: user.id, 
-            accepter_name: myProfile?.full_name,
-            accepter_avatar: myProfile?.avatar_url
+      try {
+        await supabase.functions.invoke('create-notification', {
+          body: {
+            user_id: request.requester_id,
+            type: 'new_connection',
+            title: 'Connection Accepted!',
+            message: `${myProfile?.full_name || 'Someone'} accepted your connection request`,
+            data: { 
+              connection_id: user.id, 
+              accepter_name: myProfile?.full_name,
+              accepter_avatar: myProfile?.avatar_url
+            }
           }
-        }
-      });
+        });
+      } catch (notifError) {
+        console.error('Notification error:', notifError);
+      }
 
       // Send email notification for accepted connection
       if (requesterProfile.email) {
@@ -355,23 +389,28 @@ export function useConnectionRequests() {
       }
 
       // Notify myself (optional - for UI confirmation)
-      await supabase.functions.invoke('create-notification', {
-        body: {
-          user_id: user.id,
-          type: 'new_connection',
-          title: 'New Connection!',
-          message: `You are now connected with ${requesterProfile.full_name}`,
-          data: { 
-            connection_id: request.requester_id,
-            connection_name: requesterProfile.full_name,
-            connection_avatar: requesterProfile.avatar_url
+      try {
+        await supabase.functions.invoke('create-notification', {
+          body: {
+            user_id: user.id,
+            type: 'new_connection',
+            title: 'New Connection!',
+            message: `You are now connected with ${requesterProfile.full_name}`,
+            data: { 
+              connection_id: request.requester_id,
+              connection_name: requesterProfile.full_name,
+              connection_avatar: requesterProfile.avatar_url
+            }
           }
-        }
-      });
+        });
+      } catch (notifError) {
+        console.error('Self notification error:', notifError);
+      }
 
       toast({ title: 'Connected!', description: `You're now connected with ${requesterProfile.full_name}` });
       await fetchRequests();
     } catch (error: any) {
+      console.error('Accept request error:', error);
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     }
   }, [fetchRequests, toast]);
