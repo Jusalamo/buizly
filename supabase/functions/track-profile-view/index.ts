@@ -1,10 +1,27 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// Allowed origins for CORS
+const allowedOrigins = [
+  'https://buizly.lovable.app',
+  'https://lovable.app',
+];
+
+// Pattern for Lovable preview URLs
+const allowedOriginPatterns = [
+  /^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.lovable\.app$/,
+];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const isAllowed = allowedOrigins.includes(origin) || 
+    allowedOriginPatterns.some(pattern => pattern.test(origin));
+  
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin : allowedOrigins[0],
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
 
 interface TrackViewRequest {
   profileId: string;
@@ -37,12 +54,29 @@ function validateUUID(str: string): boolean {
 
 const handler = async (req: Request): Promise<Response> => {
   console.log("[track-profile-view] Request received");
+  const corsHeaders = getCorsHeaders(req);
 
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Validate origin for non-OPTIONS requests
+    const origin = req.headers.get('origin') || '';
+    const referer = req.headers.get('referer') || '';
+    const isAllowedOrigin = allowedOrigins.includes(origin) || 
+      allowedOriginPatterns.some(pattern => pattern.test(origin));
+    const isAllowedReferer = allowedOrigins.some(o => referer.startsWith(o)) ||
+      allowedOriginPatterns.some(pattern => pattern.test(new URL(referer).origin));
+    
+    if (!isAllowedOrigin && !isAllowedReferer) {
+      console.warn("[track-profile-view] Rejected request from unauthorized origin:", origin);
+      return new Response(
+        JSON.stringify({ error: "Forbidden" }),
+        { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     // Get IP for rate limiting
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || 
                req.headers.get("cf-connecting-ip") || 
@@ -96,7 +130,7 @@ const handler = async (req: Request): Promise<Response> => {
     });
 
     // Sanitize referrer (limit length, basic validation)
-    const sanitizedReferrer = referrer ? referrer.substring(0, 500) : null;
+    const sanitizedReferrer = referer ? referer.substring(0, 500) : null;
 
     // Insert the view record
     const { error } = await supabaseClient
