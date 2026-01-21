@@ -11,26 +11,33 @@ export function useUserSettings() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('user_settings')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // Use the secure RPC function that doesn't expose OAuth tokens
+      const { data, error } = await supabase.rpc('get_user_settings_safe');
 
       if (error) throw error;
 
-      if (data) {
-        setSettings(data as UserSettings);
+      if (data && data.length > 0) {
+        // Map the RPC result to UserSettings format (tokens are null/not exposed)
+        const settingsData = data[0];
+        setSettings({
+          ...settingsData,
+          google_refresh_token: null, // Token is never exposed to client
+          outlook_refresh_token: null, // Token is never exposed to client
+        } as UserSettings);
       } else {
         // Create default settings if none exist
         const { data: newSettings, error: insertError } = await supabase
           .from('user_settings')
           .insert({ user_id: user.id })
-          .select()
+          .select('id, user_id, onboarding_completed, email_notifications, push_notifications, google_calendar_connected, outlook_calendar_connected, profile_visibility, theme, ical_url, created_at, updated_at')
           .single();
 
         if (insertError) throw insertError;
-        setSettings(newSettings as UserSettings);
+        setSettings({
+          ...newSettings,
+          google_refresh_token: null,
+          outlook_refresh_token: null,
+        } as UserSettings);
       }
     } catch (error) {
       console.error('Error fetching user settings:', error);
