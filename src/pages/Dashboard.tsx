@@ -15,12 +15,13 @@ import { OptimizedAvatar } from "@/components/OptimizedAvatar";
 import { ProfileOnboarding } from "@/components/ProfileOnboarding";
 import type { MeetingStatus } from "@/types/database";
 
+// Use semantic status color tokens
 const statusColors: Record<string, string> = {
-  pending: "bg-yellow-500/20 text-yellow-400",
-  confirmed: "bg-green-500/20 text-green-400",
-  declined: "bg-red-500/20 text-red-400",
+  pending: "bg-status-warning/20 text-status-warning",
+  confirmed: "bg-status-success/20 text-status-success",
+  declined: "bg-status-error/20 text-status-error",
   cancelled: "bg-muted text-muted-foreground",
-  rescheduled: "bg-blue-500/20 text-blue-400"
+  rescheduled: "bg-status-info/20 text-status-info"
 };
 
 type TimeFilter = "week" | "month" | "year" | "all";

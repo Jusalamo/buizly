@@ -6,11 +6,11 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useMemo } from "react";
 
 const navItems = [
-  { to: "/", icon: Home, label: "Home", matchPaths: ["/", "/meeting"], notifType: null },
-  { to: "/network", icon: Users, label: "Network", matchPaths: ["/network", "/connection"], notifType: "network" },
-  { to: "/discover", icon: UserPlus, label: "Add", matchPaths: ["/discover", "/capture"], notifType: "discover" },
-  { to: "/schedule", icon: Calendar, label: "Schedule", matchPaths: ["/schedule"], notifType: "schedule" },
-  { to: "/settings", icon: Settings, label: "Settings", matchPaths: ["/settings", "/profile", "/analytics", "/subscription"], notifType: null },
+  { to: "/", icon: Home, label: "Home", matchPaths: ["/", "/meeting"], notifType: null, tourId: "dashboard" },
+  { to: "/network", icon: Users, label: "Network", matchPaths: ["/network", "/connection"], notifType: "network", tourId: "network" },
+  { to: "/discover", icon: UserPlus, label: "Add", matchPaths: ["/discover", "/capture"], notifType: "discover", tourId: "capture" },
+  { to: "/schedule", icon: Calendar, label: "Schedule", matchPaths: ["/schedule"], notifType: "schedule", tourId: "schedule" },
+  { to: "/settings", icon: Settings, label: "Settings", matchPaths: ["/settings", "/profile", "/analytics", "/subscription"], notifType: null, tourId: "settings" },
 ];
 
 export const BottomNav = () => {
@@ -49,12 +49,13 @@ export const BottomNav = () => {
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50">
       <div className="max-w-screen-xl mx-auto flex justify-around items-center h-16 px-4">
-        {navItems.map(({ to, icon: Icon, label, matchPaths, notifType }) => {
+        {navItems.map(({ to, icon: Icon, label, matchPaths, notifType, tourId }) => {
           const count = getCount(notifType);
           return (
             <Link
               key={to}
               to={to}
+              data-tour={tourId}
               className={cn(
                 "flex flex-col items-center justify-center flex-1 py-2 transition-colors relative",
                 isActive(matchPaths) ? "text-primary" : "text-muted-foreground"

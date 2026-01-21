@@ -313,7 +313,7 @@ export default function Schedule() {
                   {date ? format(date, "PPP") : "Pick a date"}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0 bg-card border-border" align="start">
+              <PopoverContent className="w-auto min-w-[280px] p-2 bg-card border-border shadow-lg" align="start" sideOffset={4}>
                 <Calendar
                   mode="single"
                   selected={date}
@@ -323,7 +323,6 @@ export default function Schedule() {
                   }}
                   disabled={(date) => date < new Date()}
                   initialFocus
-                  className="pointer-events-auto"
                 />
               </PopoverContent>
             </Popover>

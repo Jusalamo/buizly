@@ -33,6 +33,12 @@ All colors MUST be HSL.
     --neon-glow: 142 100% 40%;
     --card-surface: 0 0% 100%;
     --font-sans: Roboto, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji;
+    
+    /* Semantic status colors */
+    --status-success: 142 76% 36%;
+    --status-warning: 45 93% 47%;
+    --status-error: 0 84% 60%;
+    --status-info: 217 91% 60%;
   }
 
   .dark {
@@ -60,6 +66,12 @@ All colors MUST be HSL.
     --neon-glow: 142 100% 50%;
     --card-surface: 0 0% 10%;
     --font-sans: Roboto, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji;
+    
+    /* Semantic status colors (bright for dark mode) */
+    --status-success: 142 100% 50%;
+    --status-warning: 45 100% 50%;
+    --status-error: 0 100% 65%;
+    --status-info: 217 100% 65%;
   }
 }
 

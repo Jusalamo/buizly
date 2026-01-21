@@ -1115,6 +1115,10 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: number
       }
+      is_plug_participant: {
+        Args: { p_plug_id: string; p_user_id: string }
+        Returns: boolean
+      }
       set_user_oauth_token: {
         Args: { token_type: string; token_value: string }
         Returns: undefined
