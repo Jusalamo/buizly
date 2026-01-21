@@ -836,32 +836,6 @@ export type Database = {
           updated_at: string | null
           website: string | null
         }
-        Insert: {
-          avatar_url?: string | null
-          bio?: string | null
-          company?: string | null
-          created_at?: string | null
-          full_name?: string | null
-          id?: string | null
-          instagram_url?: string | null
-          job_title?: string | null
-          linkedin_url?: string | null
-          updated_at?: string | null
-          website?: string | null
-        }
-        Update: {
-          avatar_url?: string | null
-          bio?: string | null
-          company?: string | null
-          created_at?: string | null
-          full_name?: string | null
-          id?: string | null
-          instagram_url?: string | null
-          job_title?: string | null
-          linkedin_url?: string | null
-          updated_at?: string | null
-          website?: string | null
-        }
         Relationships: []
       }
       profiles_search: {
