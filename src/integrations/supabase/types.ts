@@ -927,6 +927,32 @@ export type Database = {
           updated_at: string | null
           website: string | null
         }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          company?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string | null
+          instagram_url?: string | null
+          job_title?: string | null
+          linkedin_url?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          company?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string | null
+          instagram_url?: string | null
+          job_title?: string | null
+          linkedin_url?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
         Relationships: []
       }
       profiles_search: {
@@ -1088,6 +1114,10 @@ export type Database = {
     Functions: {
       can_add_connection: { Args: { p_user_id: string }; Returns: boolean }
       can_view_profile: { Args: { profile_id: string }; Returns: boolean }
+      check_profile_view_rate_limit: {
+        Args: { p_ip_hash: string; p_profile_id: string }
+        Returns: boolean
+      }
       get_current_month_usage: { Args: { p_user_id: string }; Returns: number }
       get_profile_visibility: {
         Args: { target_user_id: string }
