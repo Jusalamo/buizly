@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.84.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 
 // Token decryption utilities using AES-GCM
 async function getEncryptionKey(): Promise<CryptoKey> {
@@ -76,6 +72,8 @@ async function refreshAccessToken(encryptedRefreshToken: string) {
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error("[google-create-event] Token refresh failed:", errorText);
     throw new Error("Failed to refresh access token");
   }
 
@@ -84,16 +82,22 @@ async function refreshAccessToken(encryptedRefreshToken: string) {
 }
 
 serve(async (req: Request) => {
+  // Handle CORS preflight with restricted origins
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return handleCorsPreflightRequest(req);
   }
+
+  const corsHeaders = getCorsHeaders(req);
 
   try {
     const { title, description, startDateTime, endDateTime, location, attendees } = await req.json();
     
     const authHeader = req.headers.get("authorization");
     if (!authHeader) {
-      throw new Error("No authorization header");
+      return new Response(
+        JSON.stringify({ error: "Authorization required" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const supabase = createClient(
@@ -106,7 +110,10 @@ serve(async (req: Request) => {
     );
 
     if (userError || !user) {
-      throw new Error("Invalid user token");
+      return new Response(
+        JSON.stringify({ error: "Invalid or expired token" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Get user's Google refresh token (encrypted)
@@ -117,7 +124,10 @@ serve(async (req: Request) => {
       .single();
 
     if (settingsError || !settings?.google_refresh_token) {
-      throw new Error("Google Calendar not connected");
+      return new Response(
+        JSON.stringify({ error: "Google Calendar not connected" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Refresh access token (handles decryption internally)
@@ -160,7 +170,11 @@ serve(async (req: Request) => {
 
     if (!calendarResponse.ok) {
       const error = await calendarResponse.text();
-      throw new Error(`Calendar API error: ${error}`);
+      console.error("[google-create-event] Calendar API error:", error);
+      return new Response(
+        JSON.stringify({ error: "Unable to create calendar event" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const calendarEvent = await calendarResponse.json();
@@ -177,9 +191,9 @@ serve(async (req: Request) => {
       }
     );
   } catch (error: any) {
-    console.error("Error creating Google Calendar event:", error);
+    console.error("[google-create-event] Error:", error.message);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: "An unexpected error occurred" }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
