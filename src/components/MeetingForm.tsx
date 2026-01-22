@@ -80,17 +80,50 @@ export function MeetingForm({ open, onOpenChange, editMeeting, prefillData }: Me
     fetchConnections();
   }, []);
 
+  // Parse JSON description for edit mode
   useEffect(() => {
     if (editMeeting) {
       setTitle(editMeeting.title || "");
-      setDescription(editMeeting.description || "");
       setDate(new Date(editMeeting.meeting_date));
       setTime(editMeeting.meeting_time);
       setLocation(editMeeting.location || "");
       setSelectedConnection(editMeeting.connection_id || "");
+      
+      // Parse JSON description
+      if (editMeeting.description) {
+        try {
+          const parsed = JSON.parse(editMeeting.description);
+          setDescription(parsed.description || "");
+          setNotes(parsed.notes || "");
+          setMeetingPhotos(parsed.photos || []);
+        } catch {
+          // Not JSON, use as plain text
+          setDescription(editMeeting.description);
+          setNotes("");
+          setMeetingPhotos([]);
+        }
+      } else {
+        setDescription("");
+        setNotes("");
+        setMeetingPhotos([]);
+      }
     } else if (prefillData) {
       setTitle(prefillData.title || "");
-      setDescription(prefillData.description || "");
+      // Parse prefillData description if JSON
+      if (prefillData.description) {
+        try {
+          const parsed = JSON.parse(prefillData.description);
+          setDescription(parsed.description || "");
+          setNotes(parsed.notes || "");
+          setMeetingPhotos(parsed.photos || []);
+        } catch {
+          setDescription(prefillData.description);
+          setNotes("");
+          setMeetingPhotos([]);
+        }
+      } else {
+        setDescription("");
+      }
       setLocation(prefillData.location || "");
       setSelectedConnection(prefillData.connection_id || "");
     }

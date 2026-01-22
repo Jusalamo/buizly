@@ -357,8 +357,39 @@ export function useMeetings() {
     }
   }, []);
 
+  // Real-time subscription for meetings
   useEffect(() => {
     fetchMeetings();
+
+    const setupRealtime = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+
+      const channel = supabase
+        .channel('meetings-realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'meetings' },
+          () => fetchMeetings()
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'meeting_participants' },
+          () => fetchMeetings()
+        )
+        .subscribe();
+
+      return channel;
+    };
+
+    let channel: any;
+    setupRealtime().then(ch => { channel = ch; });
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [fetchMeetings]);
 
   return {

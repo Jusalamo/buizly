@@ -1,9 +1,9 @@
-import { Home, Users, UserPlus, Calendar, Settings, Plug } from "lucide-react";
+import { Home, Users, UserPlus, Calendar, Settings } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
 import { useNotifications } from "@/hooks/useNotifications";
-import { useMemo } from "react";
+import { useMemo, useEffect, useRef } from "react";
 
 const navItems = [
   { to: "/", icon: Home, label: "Home", matchPaths: ["/", "/meeting"], notifType: null, tourId: "dashboard" },
@@ -16,15 +16,16 @@ const navItems = [
 export const BottomNav = () => {
   const location = useLocation();
   const { incomingRequests } = useConnectionRequests();
-  const { notifications } = useNotifications();
+  const { notifications, markAsRead } = useNotifications();
+  const previousPath = useRef<string>("");
   
-  // Calculate notification counts per section
+  // Calculate notification counts per section - only unread ones
   const notificationCounts = useMemo(() => {
     const unread = notifications.filter(n => !n.read);
     
     return {
       discover: incomingRequests.length, // Connection requests
-      network: unread.filter(n => n.type === 'new_connection').length, // New connections
+      network: unread.filter(n => n.type === 'new_connection' || n.type === 'plug_request').length, // New connections and plugs
       schedule: unread.filter(n => 
         n.type === 'meeting_request' || 
         n.type === 'meeting_confirmed' || 
@@ -33,6 +34,36 @@ export const BottomNav = () => {
       ).length, // Meeting related
     };
   }, [incomingRequests, notifications]);
+  
+  // Mark notifications as read when visiting a page
+  useEffect(() => {
+    const currentPath = location.pathname;
+    
+    // Only run when path changes
+    if (previousPath.current === currentPath) return;
+    previousPath.current = currentPath;
+    
+    const unread = notifications.filter(n => !n.read);
+    
+    // Mark network-related notifications as read when visiting /network
+    if (currentPath.startsWith('/network')) {
+      const networkNotifs = unread.filter(n => 
+        n.type === 'new_connection' || n.type === 'plug_request'
+      );
+      networkNotifs.forEach(n => markAsRead(n.id));
+    }
+    
+    // Mark schedule-related notifications as read when visiting /schedule
+    if (currentPath.startsWith('/schedule')) {
+      const scheduleNotifs = unread.filter(n => 
+        n.type === 'meeting_request' || 
+        n.type === 'meeting_confirmed' || 
+        n.type === 'meeting_reminder' ||
+        n.type === 'meeting_rescheduled'
+      );
+      scheduleNotifs.forEach(n => markAsRead(n.id));
+    }
+  }, [location.pathname, notifications, markAsRead]);
   
   const isActive = (matchPaths: string[]) => {
     return matchPaths.some(path => {

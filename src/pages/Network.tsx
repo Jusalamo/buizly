@@ -59,6 +59,9 @@ export default function Network() {
     if (!deleteId) return;
     
     try {
+      // Find the connection to get the email for reciprocal deletion
+      const connectionToDelete = connections.find(c => c.id === deleteId);
+      
       // First, clear parent_meeting_id references for meetings linked to this connection
       const { data: meetings } = await supabase
         .from("meetings")
@@ -94,7 +97,7 @@ export default function Network() {
           .eq("connection_id", deleteId);
       }
 
-      // Now delete the connection
+      // Now delete my connection
       const { error } = await supabase
         .from("connections")
         .delete()
@@ -102,17 +105,44 @@ export default function Network() {
 
       if (error) throw error;
 
+      // RECIPROCAL: Delete the other person's connection to me
+      if (connectionToDelete?.connection_email) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: myProfile } = await supabase
+            .from("profiles")
+            .select("email")
+            .eq("id", user.id)
+            .single();
+
+          if (myProfile?.email) {
+            // Find and delete the reciprocal connection
+            await supabase
+              .from("connections")
+              .delete()
+              .eq("connection_email", myProfile.email)
+              .in("user_id", 
+                (await supabase
+                  .from("profiles")
+                  .select("id")
+                  .eq("email", connectionToDelete.connection_email)
+                ).data?.map(p => p.id) || []
+              );
+          }
+        }
+      }
+
       // Refresh the cache
       invalidateAppCache();
       
       toast({
         title: "Connection removed",
-        description: "The connection and related meetings have been deleted",
+        description: "You and the other person have been disconnected",
       });
     } catch (error: any) {
       toast({
         title: "Error",
-        description: "Failed to delete connection. Please try again.",
+        description: "Failed to remove connection. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -359,7 +389,7 @@ export default function Network() {
                         className="text-destructive"
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
+                        Remove Connection
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -393,15 +423,15 @@ export default function Network() {
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent className="bg-card border-border">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-foreground">Delete Connection</AlertDialogTitle>
+            <AlertDialogTitle className="text-foreground">Remove Connection</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this connection? This action cannot be undone.
+              Are you sure you want to remove this connection? This will disconnect both you and the other person from each other. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="border-border">Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
-              Delete
+              Remove
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

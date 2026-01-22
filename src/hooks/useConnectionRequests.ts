@@ -287,6 +287,7 @@ export function useConnectionRequests() {
         c.user_id === request.requester_id && c.connection_email === myProfile.email
       );
 
+      // Create both connections - do sequentially to ensure proper error handling
       // Add requester to my connections (if not already exists)
       if (!myConnectionExists) {
         const { error: myConnError } = await supabase.from('connections').insert({
@@ -329,7 +330,7 @@ export function useConnectionRequests() {
         }
       }
 
-      // DELETE the request after acceptance (clear it from the list)
+      // DELETE the request after successful acceptance
       await supabase
         .from('connection_requests')
         .delete()
@@ -341,9 +342,10 @@ export function useConnectionRequests() {
         myConnectionsCache.add(requesterProfile.email.toLowerCase());
       }
 
-      // Notify requester that connection was accepted (via edge function)
-      try {
-        await supabase.functions.invoke('create-notification', {
+      // Notify both users in parallel
+      const notificationPromises = [
+        // Notify requester that connection was accepted
+        supabase.functions.invoke('create-notification', {
           body: {
             user_id: request.requester_id,
             type: 'new_connection',
@@ -355,42 +357,9 @@ export function useConnectionRequests() {
               accepter_avatar: myProfile?.avatar_url
             }
           }
-        });
-      } catch (notifError) {
-        console.error('Notification error:', notifError);
-      }
-
-      // Send email notification for accepted connection
-      if (requesterProfile.email) {
-        try {
-          const { data: settings } = await supabase
-            .from('user_settings')
-            .select('email_notifications')
-            .eq('user_id', request.requester_id)
-            .single();
-
-          if (settings?.email_notifications !== false) {
-            await supabase.functions.invoke('send-email', {
-              body: {
-                type: 'connectionAccepted',
-                to: requesterProfile.email,
-                payload: {
-                  accepterName: myProfile?.full_name || 'Someone',
-                  jobTitle: myProfile?.job_title,
-                  company: myProfile?.company,
-                  appUrl: `${window.location.origin}/network`
-                }
-              }
-            });
-          }
-        } catch (emailError) {
-          console.error('Failed to send email notification:', emailError);
-        }
-      }
-
-      // Notify myself (optional - for UI confirmation)
-      try {
-        await supabase.functions.invoke('create-notification', {
+        }),
+        // Notify myself (for UI confirmation)
+        supabase.functions.invoke('create-notification', {
           body: {
             user_id: user.id,
             type: 'new_connection',
@@ -402,9 +371,38 @@ export function useConnectionRequests() {
               connection_avatar: requesterProfile.avatar_url
             }
           }
-        });
-      } catch (notifError) {
-        console.error('Self notification error:', notifError);
+        })
+      ];
+
+      // Fire notifications without waiting
+      Promise.all(notificationPromises).catch(err => console.error('Notification error:', err));
+
+      // Send email notification for accepted connection
+      if (requesterProfile.email) {
+        try {
+          const { data: settings } = await supabase
+            .from('user_settings')
+            .select('email_notifications')
+            .eq('user_id', request.requester_id)
+            .single();
+
+          if (settings?.email_notifications !== false) {
+            supabase.functions.invoke('send-email', {
+              body: {
+                type: 'connectionAccepted',
+                to: requesterProfile.email,
+                payload: {
+                  accepterName: myProfile?.full_name || 'Someone',
+                  jobTitle: myProfile?.job_title,
+                  company: myProfile?.company,
+                  appUrl: `${window.location.origin}/network`
+                }
+              }
+            }).catch(err => console.error('Email error:', err));
+          }
+        } catch (emailError) {
+          console.error('Failed to send email notification:', emailError);
+        }
       }
 
       toast({ title: 'Connected!', description: `You're now connected with ${requesterProfile.full_name}` });
