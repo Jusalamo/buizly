@@ -59,45 +59,74 @@ export default function PublicProfile() {
       const isAuthenticated = !!session?.user;
       const currentUserId = session?.user?.id || null;
 
-      const [basicResult, settingsResult] = await Promise.all([
-        supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
-        supabase.from("user_settings").select("profile_visibility").eq("user_id", userId).maybeSingle()
-      ]);
-
-      if (!basicResult.data) {
-        setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated, currentUserId });
-        setLoading(false);
-        return;
-      }
-
-      const visibility = settingsResult.data?.profile_visibility || 'public';
+      // First check visibility - use RPC to get visibility safely
+      const { data: visibility } = await supabase.rpc('get_profile_visibility', { 
+        target_user_id: userId 
+      });
+      
       const isPrivate = visibility === 'private';
+      const isConnectionsOnly = visibility === 'connections_only';
 
+      // For private profiles (not the owner), show limited info
       if (isPrivate && currentUserId !== userId) {
-        setState({ 
-          profile: null, 
-          isPrivate: true, 
-          basicInfo: { 
-            name: basicResult.data.full_name, 
-            avatar_url: basicResult.data.avatar_url
-          },
-          isAuthenticated,
-          currentUserId
+        // Get basic public info only via secure function
+        const { data: publicProfile } = await supabase.rpc('get_public_profile_safe', { 
+          profile_id: userId 
         });
+        
+        if (publicProfile && publicProfile.length > 0) {
+          setState({ 
+            profile: null, 
+            isPrivate: true, 
+            basicInfo: { 
+              name: publicProfile[0].full_name, 
+              avatar_url: publicProfile[0].avatar_url
+            },
+            isAuthenticated,
+            currentUserId
+          });
+        } else {
+          setState({ profile: null, isPrivate: true, basicInfo: null, isAuthenticated, currentUserId });
+        }
         setLoading(false);
         return;
       }
 
-      let safeProfile: PublicSafeProfile | null = null;
-      if (basicResult.data) {
-        safeProfile = {
-          ...basicResult.data,
-          email: isAuthenticated ? basicResult.data.email : null,
-          phone: isAuthenticated ? basicResult.data.phone : null,
-        } as PublicSafeProfile;
+      // For authenticated users, get profile with contact info
+      if (isAuthenticated) {
+        const { data: fullProfile } = await supabase.rpc('get_profile_with_contact', { 
+          profile_id: userId 
+        });
+        
+        if (fullProfile && fullProfile.length > 0) {
+          setState({ 
+            profile: fullProfile[0] as PublicSafeProfile, 
+            isPrivate: false, 
+            basicInfo: null, 
+            isAuthenticated, 
+            currentUserId 
+          });
+        } else {
+          setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated, currentUserId });
+        }
+      } else {
+        // For unauthenticated users, get public profile without contact info
+        const { data: publicProfile } = await supabase.rpc('get_public_profile_safe', { 
+          profile_id: userId 
+        });
+        
+        if (publicProfile && publicProfile.length > 0) {
+          setState({ 
+            profile: { ...publicProfile[0], email: null, phone: null } as PublicSafeProfile, 
+            isPrivate: false, 
+            basicInfo: null, 
+            isAuthenticated, 
+            currentUserId 
+          });
+        } else {
+          setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated, currentUserId });
+        }
       }
-
-      setState({ profile: safeProfile, isPrivate: false, basicInfo: null, isAuthenticated, currentUserId });
     } catch (error) {
       console.error("Error loading profile:", error);
       setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated: false, currentUserId: null });
