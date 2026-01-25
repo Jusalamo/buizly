@@ -244,102 +244,37 @@ export function useConnectionRequests() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      // Get the request
-      const { data: request, error: requestError } = await supabase
-        .from('connection_requests')
-        .select('*')
-        .eq('id', requestId)
-        .single();
+      // Use the secure RPC function that handles reciprocal connections
+      const { data, error: rpcError } = await supabase.rpc('accept_connection_request', {
+        p_request_id: requestId
+      });
 
-      if (requestError) throw requestError;
-      if (!request) throw new Error('Request not found');
-
-      // Get requester profile
-      const { data: requesterProfile, error: reqProfileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', request.requester_id)
-        .single();
-
-      if (reqProfileError) throw reqProfileError;
-      if (!requesterProfile) throw new Error('Requester profile not found');
-
-      // Get my profile
-      const { data: myProfile, error: myProfileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      if (myProfileError) throw myProfileError;
-      if (!myProfile) throw new Error('Your profile not found');
-
-      // Check if connections already exist to prevent duplicates
-      const { data: existingConnections } = await supabase
-        .from('connections')
-        .select('id, user_id, connection_email')
-        .or(`and(user_id.eq.${user.id},connection_email.eq.${requesterProfile.email}),and(user_id.eq.${request.requester_id},connection_email.eq.${myProfile.email})`);
-
-      const myConnectionExists = existingConnections?.some(c => 
-        c.user_id === user.id && c.connection_email === requesterProfile.email
-      );
-      const theirConnectionExists = existingConnections?.some(c => 
-        c.user_id === request.requester_id && c.connection_email === myProfile.email
-      );
-
-      // Create both connections - do sequentially to ensure proper error handling
-      // Add requester to my connections (if not already exists)
-      if (!myConnectionExists) {
-        const { error: myConnError } = await supabase.from('connections').insert({
-          user_id: user.id,
-          connection_name: requesterProfile.full_name,
-          connection_email: requesterProfile.email,
-          connection_title: requesterProfile.job_title,
-          connection_company: requesterProfile.company,
-          connection_phone: requesterProfile.phone,
-          connection_avatar_url: requesterProfile.avatar_url,
-          connection_linkedin: requesterProfile.linkedin_url,
-          connection_instagram: (requesterProfile as any).instagram_url,
-          connection_gallery_photos: (requesterProfile as any).gallery_photos,
-        });
-        
-        if (myConnError) {
-          console.error('Error adding connection to my list:', myConnError);
-          throw new Error(`Failed to add ${requesterProfile.full_name} to your connections`);
-        }
+      if (rpcError) {
+        console.error('RPC error:', rpcError);
+        throw new Error(rpcError.message);
       }
 
-      // Add me to requester's connections (RECIPROCAL - if not already exists)
-      if (!theirConnectionExists) {
-        const { error: theirConnError } = await supabase.from('connections').insert({
-          user_id: request.requester_id,
-          connection_name: myProfile.full_name,
-          connection_email: myProfile.email,
-          connection_title: myProfile.job_title,
-          connection_company: myProfile.company,
-          connection_phone: myProfile.phone,
-          connection_avatar_url: myProfile.avatar_url,
-          connection_linkedin: myProfile.linkedin_url,
-          connection_instagram: (myProfile as any).instagram_url,
-          connection_gallery_photos: (myProfile as any).gallery_photos,
-        });
-        
-        if (theirConnError) {
-          console.error('Error adding reciprocal connection:', theirConnError);
-          throw new Error(`Failed to add you to ${requesterProfile.full_name}'s connections`);
-        }
-      }
+      // Cast the result to the expected type
+      const result = data as {
+        success: boolean;
+        error?: string;
+        requester_id?: string;
+        requester_name?: string;
+        requester_email?: string;
+        requester_avatar?: string;
+        accepter_name?: string;
+      } | null;
 
-      // DELETE the request after successful acceptance
-      await supabase
-        .from('connection_requests')
-        .delete()
-        .eq('id', requestId);
+      if (!result?.success) {
+        throw new Error(result?.error || 'Failed to accept connection');
+      }
 
       // Update local caches immediately
-      connectionStatusCache.set(request.requester_id, 'accepted');
-      if (requesterProfile.email) {
-        myConnectionsCache.add(requesterProfile.email.toLowerCase());
+      if (result.requester_id) {
+        connectionStatusCache.set(result.requester_id, 'accepted');
+      }
+      if (result.requester_email) {
+        myConnectionsCache.add(result.requester_email.toLowerCase());
       }
 
       // Notify both users in parallel
@@ -347,14 +282,14 @@ export function useConnectionRequests() {
         // Notify requester that connection was accepted
         supabase.functions.invoke('create-notification', {
           body: {
-            user_id: request.requester_id,
+            user_id: result.requester_id,
             type: 'new_connection',
             title: 'Connection Accepted!',
-            message: `${myProfile?.full_name || 'Someone'} accepted your connection request`,
+            message: `${result.accepter_name || 'Someone'} accepted your connection request`,
             data: { 
               connection_id: user.id, 
-              accepter_name: myProfile?.full_name,
-              accepter_avatar: myProfile?.avatar_url
+              accepter_name: result.accepter_name,
+              accepter_avatar: null
             }
           }
         }),
@@ -364,37 +299,35 @@ export function useConnectionRequests() {
             user_id: user.id,
             type: 'new_connection',
             title: 'New Connection!',
-            message: `You are now connected with ${requesterProfile.full_name}`,
+            message: `You are now connected with ${result.requester_name}`,
             data: { 
-              connection_id: request.requester_id,
-              connection_name: requesterProfile.full_name,
-              connection_avatar: requesterProfile.avatar_url
+              connection_id: result.requester_id,
+              connection_name: result.requester_name,
+              connection_avatar: result.requester_avatar
             }
           }
         })
       ];
 
-      // Fire notifications without waiting
+      // Fire notifications without blocking
       Promise.all(notificationPromises).catch(err => console.error('Notification error:', err));
 
       // Send email notification for accepted connection
-      if (requesterProfile.email) {
+      if (result.requester_email && result.requester_id) {
         try {
           const { data: settings } = await supabase
             .from('user_settings')
             .select('email_notifications')
-            .eq('user_id', request.requester_id)
+            .eq('user_id', result.requester_id)
             .single();
 
           if (settings?.email_notifications !== false) {
             supabase.functions.invoke('send-email', {
               body: {
                 type: 'connectionAccepted',
-                to: requesterProfile.email,
+                to: result.requester_email,
                 payload: {
-                  accepterName: myProfile?.full_name || 'Someone',
-                  jobTitle: myProfile?.job_title,
-                  company: myProfile?.company,
+                  accepterName: result.accepter_name || 'Someone',
                   appUrl: `${window.location.origin}/network`
                 }
               }
@@ -405,7 +338,7 @@ export function useConnectionRequests() {
         }
       }
 
-      toast({ title: 'Connected!', description: `You're now connected with ${requesterProfile.full_name}` });
+      toast({ title: 'Connected!', description: `You're now connected with ${result.requester_name}` });
       await fetchRequests();
     } catch (error: any) {
       console.error('Accept request error:', error);
