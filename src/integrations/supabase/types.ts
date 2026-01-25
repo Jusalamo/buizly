@@ -833,6 +833,7 @@ export type Database = {
       }
       user_settings: {
         Row: {
+          accent_color: string | null
           created_at: string | null
           email_notifications: boolean | null
           google_calendar_connected: boolean | null
@@ -844,11 +845,14 @@ export type Database = {
           outlook_refresh_token: string | null
           profile_visibility: string | null
           push_notifications: boolean | null
+          qr_background: string | null
+          qr_foreground: string | null
           theme: string | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
+          accent_color?: string | null
           created_at?: string | null
           email_notifications?: boolean | null
           google_calendar_connected?: boolean | null
@@ -860,11 +864,14 @@ export type Database = {
           outlook_refresh_token?: string | null
           profile_visibility?: string | null
           push_notifications?: boolean | null
+          qr_background?: string | null
+          qr_foreground?: string | null
           theme?: string | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
+          accent_color?: string | null
           created_at?: string | null
           email_notifications?: boolean | null
           google_calendar_connected?: boolean | null
@@ -876,6 +883,8 @@ export type Database = {
           outlook_refresh_token?: string | null
           profile_visibility?: string | null
           push_notifications?: boolean | null
+          qr_background?: string | null
+          qr_foreground?: string | null
           theme?: string | null
           updated_at?: string | null
           user_id?: string
@@ -1086,6 +1095,10 @@ export type Database = {
       }
     }
     Functions: {
+      accept_connection_request: {
+        Args: { p_request_id: string }
+        Returns: Json
+      }
       can_add_connection: { Args: { p_user_id: string }; Returns: boolean }
       can_view_profile: { Args: { profile_id: string }; Returns: boolean }
       check_profile_view_rate_limit: {
@@ -1159,6 +1172,10 @@ export type Database = {
       is_plug_participant: {
         Args: { p_plug_id: string; p_user_id: string }
         Returns: boolean
+      }
+      remove_connection_reciprocal: {
+        Args: { p_connection_email: string }
+        Returns: Json
       }
       set_user_oauth_token: {
         Args: { token_type: string; token_value: string }

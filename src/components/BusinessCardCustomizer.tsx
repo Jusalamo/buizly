@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
-  Palette, Check, QrCode, CreditCard, Upload, Sparkles
+  Palette, Check, QrCode, CreditCard, Upload, Sparkles, X, Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const CARD_TEMPLATES = [
   { 
@@ -64,19 +65,23 @@ interface CardCustomization {
 
 interface BusinessCardCustomizerProps {
   onSave?: (customization: CardCustomization) => Promise<void>;
+  initialCustomization?: Partial<CardCustomization>;
 }
 
-export function BusinessCardCustomizer({ onSave }: BusinessCardCustomizerProps) {
+export function BusinessCardCustomizer({ onSave, initialCustomization }: BusinessCardCustomizerProps) {
   const [activeTab, setActiveTab] = useState<"templates" | "qr" | "branding">("templates");
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [customization, setCustomization] = useState<CardCustomization>({
-    templateId: "default",
-    qrForeground: "#00ff4d",
-    qrBackground: "#000000",
-    accentColor: "#00ff4d",
+    templateId: initialCustomization?.templateId || "default",
+    qrForeground: initialCustomization?.qrForeground || "#00ff4d",
+    qrBackground: initialCustomization?.qrBackground || "#000000",
+    accentColor: initialCustomization?.accentColor || "#00ff4d",
+    logoUrl: initialCustomization?.logoUrl,
   });
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const selectedTemplate = CARD_TEMPLATES.find(t => t.id === customization.templateId) || CARD_TEMPLATES[0];
 
@@ -88,6 +93,60 @@ export function BusinessCardCustomizer({ onSave }: BusinessCardCustomizerProps) 
       qrBackground: template.background,
       accentColor: template.primary,
     });
+  };
+
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Invalid file', description: 'Please upload an image file', variant: 'destructive' });
+      return;
+    }
+
+    // Validate file size (2MB max)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({ title: 'File too large', description: 'Please upload an image under 2MB', variant: 'destructive' });
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/logo-${Date.now()}.${fileExt}`;
+
+      // Upload to Supabase storage
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      setCustomization(c => ({ ...c, logoUrl: publicUrl }));
+      toast({ title: 'Logo uploaded', description: 'Your company logo has been uploaded' });
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      toast({ title: 'Upload failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setUploading(false);
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const removeLogo = () => {
+    setCustomization(c => ({ ...c, logoUrl: undefined }));
   };
 
   const handleSave = async () => {
@@ -282,15 +341,53 @@ export function BusinessCardCustomizer({ onSave }: BusinessCardCustomizerProps) 
             <Label className="text-xs text-muted-foreground mb-2 block">
               Company Logo (optional)
             </Label>
-            <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer">
-              <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">
-                Click to upload or drag and drop
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                PNG, JPG up to 2MB
-              </p>
-            </div>
+            
+            {customization.logoUrl ? (
+              <div className="relative border border-border rounded-lg p-4 flex items-center gap-4">
+                <img 
+                  src={customization.logoUrl} 
+                  alt="Company logo" 
+                  className="w-16 h-16 object-contain rounded"
+                />
+                <div className="flex-1">
+                  <p className="text-sm text-foreground">Logo uploaded</p>
+                  <p className="text-xs text-muted-foreground">Click to replace or remove</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={removeLogo}
+                  className="absolute top-2 right-2 h-6 w-6"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer"
+              >
+                {uploading ? (
+                  <Loader2 className="h-8 w-8 text-primary mx-auto mb-2 animate-spin" />
+                ) : (
+                  <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                )}
+                <p className="text-sm text-muted-foreground">
+                  {uploading ? 'Uploading...' : 'Click to upload or drag and drop'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  PNG, JPG up to 2MB
+                </p>
+              </div>
+            )}
+            
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleLogoUpload}
+              className="hidden"
+            />
           </div>
         </TabsContent>
       </Tabs>
@@ -306,17 +403,25 @@ export function BusinessCardCustomizer({ onSave }: BusinessCardCustomizerProps) 
           }}
         >
           <div className="flex items-start justify-between">
-            <div
-              className="w-10 h-10 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: `${customization.accentColor}20` }}
-            >
-              <span 
-                className="text-lg font-bold"
-                style={{ color: customization.accentColor }}
+            {customization.logoUrl ? (
+              <img 
+                src={customization.logoUrl} 
+                alt="Logo" 
+                className="w-10 h-10 object-contain rounded-lg"
+              />
+            ) : (
+              <div
+                className="w-10 h-10 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: `${customization.accentColor}20` }}
               >
-                B
-              </span>
-            </div>
+                <span 
+                  className="text-lg font-bold"
+                  style={{ color: customization.accentColor }}
+                >
+                  B
+                </span>
+              </div>
+            )}
             <div
               className="w-12 h-12 rounded grid grid-cols-4 grid-rows-4 gap-0.5"
               style={{ backgroundColor: customization.qrBackground }}
