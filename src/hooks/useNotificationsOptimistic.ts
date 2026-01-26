@@ -7,9 +7,14 @@ import { useToast } from '@/hooks/use-toast';
 let globalNotifications: Notification[] = [];
 let globalUnreadCount = 0;
 const subscribers = new Set<() => void>();
+const toastSubscribers = new Set<(notification: Notification) => void>();
 
 function notifySubscribers() {
   subscribers.forEach(fn => fn());
+}
+
+function notifyToastSubscribers(notification: Notification) {
+  toastSubscribers.forEach(fn => fn(notification));
 }
 
 export function useNotificationsOptimistic() {
@@ -17,6 +22,7 @@ export function useNotificationsOptimistic() {
   const [unreadCount, setUnreadCount] = useState(globalUnreadCount);
   const [loading, setLoading] = useState(globalNotifications.length === 0);
   const [hasNewNotification, setHasNewNotification] = useState(false);
+  const [newToasts, setNewToasts] = useState<Notification[]>([]);
   const { toast } = useToast();
   const channelRef = useRef<any>(null);
   const userIdRef = useRef<string | null>(null);
@@ -28,7 +34,22 @@ export function useNotificationsOptimistic() {
       setUnreadCount(globalUnreadCount);
     };
     subscribers.add(update);
-    return () => { subscribers.delete(update); };
+    
+    // Subscribe to new toast notifications
+    const handleNewToast = (notification: Notification) => {
+      setNewToasts(prev => [notification, ...prev].slice(0, 3));
+      
+      // Auto-remove toast after 5 seconds
+      setTimeout(() => {
+        setNewToasts(prev => prev.filter(t => t.id !== notification.id));
+      }, 5000);
+    };
+    toastSubscribers.add(handleNewToast);
+    
+    return () => { 
+      subscribers.delete(update);
+      toastSubscribers.delete(handleNewToast);
+    };
   }, []);
 
   const updateGlobalState = useCallback((newNotifications: Notification[]) => {
@@ -135,6 +156,11 @@ export function useNotificationsOptimistic() {
     }
   }, [updateGlobalState, fetchNotifications]);
 
+  // Dismiss toast
+  const dismissToast = useCallback((id: string) => {
+    setNewToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
   // Create notification
   const createNotification = useCallback(async (
     userId: string,
@@ -192,6 +218,13 @@ export function useNotificationsOptimistic() {
             const updated = [newNotification, ...globalNotifications];
             updateGlobalState(updated);
             setHasNewNotification(true);
+
+            // Trigger toast notification for connection and plug requests
+            if (newNotification.type === 'new_connection' || 
+                newNotification.type === 'plug_request' ||
+                newNotification.type === 'meeting_request') {
+              notifyToastSubscribers(newNotification);
+            }
 
             // Show browser notification if permitted
             if (Notification.permission === 'granted') {
@@ -258,10 +291,12 @@ export function useNotificationsOptimistic() {
     unreadCount,
     loading,
     hasNewNotification,
+    newToasts,
     markAsRead,
     markAllAsRead,
     createNotification,
     deleteNotification,
+    dismissToast,
     refetch: fetchNotifications
   };
 }

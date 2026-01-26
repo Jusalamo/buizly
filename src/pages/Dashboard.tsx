@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { QRCode } from "@/components/QRCode";
-import { Users, Calendar, TrendingUp, MapPin, Clock, ChevronRight, Filter, UserPlus } from "lucide-react";
+import { Users, Calendar, StickyNote, QrCode, MapPinCheck, MapPin, Clock, ChevronRight, Filter, UserPlus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
 import { useAppCache } from "@/hooks/useAppCache";
@@ -93,11 +93,8 @@ export default function Dashboard() {
     return filtered.slice(0, 5);
   }, [allConnections, connectionFilter]);
 
-  const getThisWeekCount = useMemo(() => {
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    return allConnections.filter(c => new Date(c.created_at) > weekAgo).length;
-  }, [allConnections]);
+  // Get next meeting for check-in
+  const nextMeeting = upcomingMeetings[0];
 
   // Show minimal loading only on first load before auth check
   if (!initialized) {
@@ -131,6 +128,11 @@ export default function Dashboard() {
       />
     );
   }
+
+  const openGoogleMaps = (location: string) => {
+    const encoded = encodeURIComponent(location);
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encoded}`, '_blank');
+  };
 
   return (
     <Layout>
@@ -185,37 +187,49 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Card className="bg-card border-border px-4 py-3 flex items-center gap-3">
+        {/* Quick Action Buttons - Horizontal on mobile */}
+        <div className="flex flex-row gap-3 overflow-x-auto pb-2">
+          {/* Notes Button */}
+          <Button 
+            onClick={() => navigate("/capture")}
+            className="flex-1 min-w-0 h-auto py-4 px-4 bg-card hover:bg-card/80 border border-border text-foreground flex flex-col items-center gap-2"
+            variant="outline"
+          >
             <div className="p-2 bg-primary/10 rounded-lg">
-              <Users className="h-4 w-4 text-primary" />
+              <StickyNote className="h-5 w-5 text-primary" />
             </div>
-            <div>
-              <p className="text-lg font-bold text-foreground">{allConnections.length}</p>
-              <p className="text-xs text-muted-foreground">Connections</p>
-            </div>
-          </Card>
+            <span className="text-sm font-medium">Notes</span>
+          </Button>
 
-          <Card className="bg-card border-border px-4 py-3 flex items-center gap-3">
+          {/* Quick Scan Button */}
+          <Button 
+            onClick={() => navigate("/capture?scan=true")}
+            className="flex-1 min-w-0 h-auto py-4 px-4 bg-card hover:bg-card/80 border border-border text-foreground flex flex-col items-center gap-2"
+            variant="outline"
+          >
             <div className="p-2 bg-primary/10 rounded-lg">
-              <Calendar className="h-4 w-4 text-primary" />
+              <QrCode className="h-5 w-5 text-primary" />
             </div>
-            <div>
-              <p className="text-lg font-bold text-foreground">{upcomingMeetings.length}</p>
-              <p className="text-xs text-muted-foreground">Upcoming</p>
-            </div>
-          </Card>
+            <span className="text-sm font-medium">Quick Scan</span>
+          </Button>
 
-          <Card className="bg-card border-border px-4 py-3 flex items-center gap-3">
+          {/* Check-in Button */}
+          <Button 
+            onClick={() => {
+              if (nextMeeting?.location) {
+                openGoogleMaps(nextMeeting.location);
+              } else {
+                navigate("/schedule");
+              }
+            }}
+            className="flex-1 min-w-0 h-auto py-4 px-4 bg-card hover:bg-card/80 border border-border text-foreground flex flex-col items-center gap-2"
+            variant="outline"
+          >
             <div className="p-2 bg-primary/10 rounded-lg">
-              <TrendingUp className="h-4 w-4 text-primary" />
+              <MapPinCheck className="h-5 w-5 text-primary" />
             </div>
-            <div>
-              <p className="text-lg font-bold text-foreground">{getThisWeekCount}</p>
-              <p className="text-xs text-muted-foreground">This Week</p>
-            </div>
-          </Card>
+            <span className="text-sm font-medium">Check-in</span>
+          </Button>
         </div>
 
         {/* Upcoming Meetings */}
@@ -262,10 +276,16 @@ export default function Dashboard() {
                           <span>{meeting.meeting_time}</span>
                         </div>
                         {meeting.location && (
-                          <div className="flex items-center gap-1">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openGoogleMaps(meeting.location!);
+                            }}
+                            className="flex items-center gap-1 text-primary hover:underline"
+                          >
                             <MapPin className="h-3 w-3" />
                             <span className="truncate max-w-[100px]">{meeting.location}</span>
-                          </div>
+                          </button>
                         )}
                       </div>
                     </div>
