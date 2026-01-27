@@ -14,6 +14,99 @@ export type Database = {
   }
   public: {
     Tables: {
+      calendar_events: {
+        Row: {
+          all_day: boolean | null
+          attendees: Json | null
+          busy: boolean | null
+          calendar_color: string | null
+          calendar_id: string | null
+          calendar_name: string | null
+          color: string | null
+          created_at: string
+          description: string | null
+          end_time: string
+          external_id: string | null
+          has_notes: boolean | null
+          id: string
+          location: string | null
+          meeting_link: string | null
+          meeting_notes_id: string | null
+          recurrence_id: string | null
+          recurrence_rule: string | null
+          reminders: Json | null
+          source: string | null
+          start_time: string
+          status: string | null
+          synced_at: string | null
+          timezone: string | null
+          title: string
+          updated_at: string
+          user_id: string
+          visibility: string | null
+        }
+        Insert: {
+          all_day?: boolean | null
+          attendees?: Json | null
+          busy?: boolean | null
+          calendar_color?: string | null
+          calendar_id?: string | null
+          calendar_name?: string | null
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          end_time: string
+          external_id?: string | null
+          has_notes?: boolean | null
+          id?: string
+          location?: string | null
+          meeting_link?: string | null
+          meeting_notes_id?: string | null
+          recurrence_id?: string | null
+          recurrence_rule?: string | null
+          reminders?: Json | null
+          source?: string | null
+          start_time: string
+          status?: string | null
+          synced_at?: string | null
+          timezone?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+          visibility?: string | null
+        }
+        Update: {
+          all_day?: boolean | null
+          attendees?: Json | null
+          busy?: boolean | null
+          calendar_color?: string | null
+          calendar_id?: string | null
+          calendar_name?: string | null
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          end_time?: string
+          external_id?: string | null
+          has_notes?: boolean | null
+          id?: string
+          location?: string | null
+          meeting_link?: string | null
+          meeting_notes_id?: string | null
+          recurrence_id?: string | null
+          recurrence_rule?: string | null
+          reminders?: Json | null
+          source?: string | null
+          start_time?: string
+          status?: string | null
+          synced_at?: string | null
+          timezone?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+          visibility?: string | null
+        }
+        Relationships: []
+      }
       connection_requests: {
         Row: {
           created_at: string
@@ -175,30 +268,132 @@ export type Database = {
           },
         ]
       }
-      meeting_notes: {
+      event_templates: {
         Row: {
-          audio_note_url: string | null
+          color: string | null
           created_at: string
+          default_reminders: Json | null
+          description: string | null
+          duration: number | null
           id: string
-          meeting_id: string
-          photo_urls: string[] | null
-          text_note: string | null
+          include_notes_template: boolean | null
+          location: string | null
+          meeting_link_type: string | null
+          name: string
+          notes_template: string | null
+          title: string
+          updated_at: string
+          user_id: string
         }
         Insert: {
-          audio_note_url?: string | null
+          color?: string | null
           created_at?: string
+          default_reminders?: Json | null
+          description?: string | null
+          duration?: number | null
           id?: string
-          meeting_id: string
-          photo_urls?: string[] | null
-          text_note?: string | null
+          include_notes_template?: boolean | null
+          location?: string | null
+          meeting_link_type?: string | null
+          name: string
+          notes_template?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
         }
         Update: {
+          color?: string | null
+          created_at?: string
+          default_reminders?: Json | null
+          description?: string | null
+          duration?: number | null
+          id?: string
+          include_notes_template?: boolean | null
+          location?: string | null
+          meeting_link_type?: string | null
+          name?: string
+          notes_template?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      meeting_notes: {
+        Row: {
+          ai_action_items: Json | null
+          ai_decisions: Json | null
+          ai_highlights: Json | null
+          ai_summary: string | null
+          audio_note_url: string | null
+          bookmarks: Json | null
+          category: string | null
+          created_at: string
+          id: string
+          is_pinned: boolean | null
+          is_standalone: boolean | null
+          linked_company: string | null
+          linked_contact_ids: string[] | null
+          linked_project: string | null
+          meeting_id: string
+          photo_urls: string[] | null
+          tags: string[] | null
+          text_note: string | null
+          title: string | null
+          transcript: string | null
+          transcript_speakers: Json | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          ai_action_items?: Json | null
+          ai_decisions?: Json | null
+          ai_highlights?: Json | null
+          ai_summary?: string | null
           audio_note_url?: string | null
+          bookmarks?: Json | null
+          category?: string | null
           created_at?: string
           id?: string
+          is_pinned?: boolean | null
+          is_standalone?: boolean | null
+          linked_company?: string | null
+          linked_contact_ids?: string[] | null
+          linked_project?: string | null
+          meeting_id: string
+          photo_urls?: string[] | null
+          tags?: string[] | null
+          text_note?: string | null
+          title?: string | null
+          transcript?: string | null
+          transcript_speakers?: Json | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          ai_action_items?: Json | null
+          ai_decisions?: Json | null
+          ai_highlights?: Json | null
+          ai_summary?: string | null
+          audio_note_url?: string | null
+          bookmarks?: Json | null
+          category?: string | null
+          created_at?: string
+          id?: string
+          is_pinned?: boolean | null
+          is_standalone?: boolean | null
+          linked_company?: string | null
+          linked_contact_ids?: string[] | null
+          linked_project?: string | null
           meeting_id?: string
           photo_urls?: string[] | null
+          tags?: string[] | null
           text_note?: string | null
+          title?: string | null
+          transcript?: string | null
+          transcript_speakers?: Json | null
+          updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -409,6 +604,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      notes_categories: {
+        Row: {
+          color: string | null
+          created_at: string
+          icon: string | null
+          id: string
+          name: string
+          sort_order: number | null
+          user_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          name: string
+          sort_order?: number | null
+          user_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          name?: string
+          sort_order?: number | null
+          user_id?: string
+        }
+        Relationships: []
       }
       notifications: {
         Row: {
@@ -701,6 +926,81 @@ export type Database = {
         }
         Relationships: []
       }
+      reminder_settings: {
+        Row: {
+          created_at: string
+          default_reminders: Json | null
+          event_type: string | null
+          id: string
+          snooze_duration: number | null
+          timezone: string | null
+          updated_at: string
+          user_id: string
+          working_days: number[] | null
+          working_hours_end: string | null
+          working_hours_start: string | null
+        }
+        Insert: {
+          created_at?: string
+          default_reminders?: Json | null
+          event_type?: string | null
+          id?: string
+          snooze_duration?: number | null
+          timezone?: string | null
+          updated_at?: string
+          user_id: string
+          working_days?: number[] | null
+          working_hours_end?: string | null
+          working_hours_start?: string | null
+        }
+        Update: {
+          created_at?: string
+          default_reminders?: Json | null
+          event_type?: string | null
+          id?: string
+          snooze_duration?: number | null
+          timezone?: string | null
+          updated_at?: string
+          user_id?: string
+          working_days?: number[] | null
+          working_hours_end?: string | null
+          working_hours_start?: string | null
+        }
+        Relationships: []
+      }
+      snoozed_reminders: {
+        Row: {
+          created_at: string
+          event_id: string | null
+          id: string
+          meeting_id: string | null
+          original_reminder_time: string
+          reminder_type: string | null
+          snooze_until: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_id?: string | null
+          id?: string
+          meeting_id?: string | null
+          original_reminder_time: string
+          reminder_type?: string | null
+          snooze_until: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string | null
+          id?: string
+          meeting_id?: string | null
+          original_reminder_time?: string
+          reminder_type?: string | null
+          snooze_until?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       subscriptions: {
         Row: {
           cancel_at_period_end: boolean | null
@@ -830,6 +1130,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_calendars: {
+        Row: {
+          access_role: string | null
+          calendar_id: string
+          color: string | null
+          created_at: string
+          id: string
+          is_primary: boolean | null
+          is_synced: boolean | null
+          is_visible: boolean | null
+          last_sync_at: string | null
+          name: string
+          source: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_role?: string | null
+          calendar_id: string
+          color?: string | null
+          created_at?: string
+          id?: string
+          is_primary?: boolean | null
+          is_synced?: boolean | null
+          is_visible?: boolean | null
+          last_sync_at?: string | null
+          name: string
+          source?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_role?: string | null
+          calendar_id?: string
+          color?: string | null
+          created_at?: string
+          id?: string
+          is_primary?: boolean | null
+          is_synced?: boolean | null
+          is_visible?: boolean | null
+          last_sync_at?: string | null
+          name?: string
+          source?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_settings: {
         Row: {

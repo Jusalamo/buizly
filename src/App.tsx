@@ -27,6 +27,7 @@ import OAuth2Callback from "./pages/OAuth2Callback";
 import Analytics from "./pages/Analytics";
 import Subscription from "./pages/Subscription";
 import Discover from "./pages/Discover";
+import Calendar from "./pages/Calendar";
 import NotFound from "./pages/NotFound";
 
 // Initialize cache immediately on app load
@@ -42,6 +43,7 @@ function AppRoutes() {
       <Route path="/capture" element={<Capture />} />
       <Route path="/discover" element={<Discover />} />
       <Route path="/schedule" element={<Schedule />} />
+      <Route path="/calendar" element={<Calendar />} />
       <Route path="/profile" element={<Profile />} />
       <Route path="/profile/edit" element={<ProfileEdit />} />
       <Route path="/settings" element={<Settings />} />
