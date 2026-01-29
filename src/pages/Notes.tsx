@@ -95,10 +95,9 @@ import {
   Minimize2,
   RefreshCw,
   Headphones,
-  // Note: "Template" icon doesn't exist in lucide-react, using FileText instead
-  FileBox, // Using FileBox as template icon
-  FileCode, // Alternative for template
-  Palette, // For template customization
+  FileBox,
+  FileCode,
+  Palette,
 } from "lucide-react";
 import { useMeetingNotes } from "@/hooks/useMeetingNotes";
 import { Label } from "@/components/ui/label";
@@ -189,6 +188,18 @@ interface AudioRecording {
   transcription?: string;
 }
 
+// Helper function to convert blob to array
+const blobToArray = async (blob: Blob): Promise<number[]> => {
+  const arrayBuffer = await blob.arrayBuffer();
+  return Array.from(new Uint8Array(arrayBuffer));
+};
+
+// Helper function to convert array to blob
+const arrayToBlob = (array: number[]): Blob => {
+  const uint8Array = new Uint8Array(array);
+  return new Blob([uint8Array], { type: 'audio/webm' });
+};
+
 export default function Notes() {
   const [searchParams] = useSearchParams();
   const noteIdFromQuery = searchParams.get("note");
@@ -212,7 +223,6 @@ export default function Notes() {
     exportNote,
     shareNote,
     duplicateNote,
-    // Template management
     templates,
     createTemplate,
     updateTemplate,
@@ -309,20 +319,26 @@ export default function Notes() {
         setEditedSections(foundNote.sections || []);
         
         // Load audio recordings for this note
-        const noteRecordings = localStorage.getItem(`audio_recordings_${foundNote.id}`);
-        if (noteRecordings) {
-          try {
-            const parsed = JSON.parse(noteRecordings);
-            setAudioRecordings(parsed.map((rec: any) => ({
-              ...rec,
-              timestamp: new Date(rec.timestamp),
-              blob: new Blob([rec.blob], { type: 'audio/webm' }),
-            })));
-          } catch (error) {
-            console.error("Error loading audio recordings:", error);
+        const loadRecordings = async () => {
+          const noteRecordings = localStorage.getItem(`audio_recordings_${foundNote.id}`);
+          if (noteRecordings) {
+            try {
+              const parsed = JSON.parse(noteRecordings);
+              const loadedRecordings = await Promise.all(
+                parsed.map(async (rec: any) => ({
+                  ...rec,
+                  timestamp: new Date(rec.timestamp),
+                  blob: arrayToBlob(rec.blob),
+                }))
+              );
+              setAudioRecordings(loadedRecordings);
+            } catch (error) {
+              console.error("Error loading audio recordings:", error);
+            }
           }
-        }
+        };
         
+        loadRecordings();
         setHasUnsavedChanges(false);
         setAutoSaveStatus("saved");
       }
@@ -333,6 +349,25 @@ export default function Notes() {
       setAutoSaveStatus("idle");
     }
   }, [noteIdFromQuery, notes]);
+
+  // Auto-save functionality with status tracking
+  useEffect(() => {
+    if (hasUnsavedChanges && selectedNote) {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      
+      autoSaveTimerRef.current = setTimeout(async () => {
+        await handleSaveNote();
+      }, 1500);
+    }
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [hasUnsavedChanges, editedTitle, editedContent, editedAgenda, editedAttendees, editedTags, editedSections]);
 
   // Handle beforeunload to warn about unsaved changes
   useEffect(() => {
@@ -369,7 +404,6 @@ export default function Notes() {
         sections: editedSections,
       };
 
-      // Only update action items if changed
       if (JSON.stringify(editedActionItems) !== JSON.stringify(selectedNote.ai_action_items || [])) {
         updateData.ai_action_items = editedActionItems;
       }
@@ -382,7 +416,6 @@ export default function Notes() {
       
       toast.success("Note saved successfully");
       
-      // Clear saved status after 2 seconds
       setTimeout(() => {
         if (autoSaveStatus === "saved" && !hasUnsavedChanges) {
           setAutoSaveStatus("idle");
@@ -410,9 +443,7 @@ export default function Notes() {
     try {
       const created = await createNote({
         ...newNote,
-        // Add timestamp
         meeting_date: new Date().toISOString(),
-        // Ensure required fields
         attendees: newNote.attendees || [],
         tags: newNote.tags || [],
         ai_action_items: [],
@@ -420,7 +451,6 @@ export default function Notes() {
       });
 
       if (created?.id) {
-        // Reset form
         setNewNote({
           title: "",
           text_note: "",
@@ -440,7 +470,6 @@ export default function Notes() {
         setIsCreateDialogOpen(false);
         toast.success("Note created successfully");
         
-        // Navigate to the new note
         navigate(`/notes?note=${created.id}`);
       }
     } catch (error) {
@@ -608,7 +637,7 @@ export default function Notes() {
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
         
-        audio.onloadedmetadata = () => {
+        audio.onloadedmetadata = async () => {
           const duration = audio.duration;
           
           const newRecording: AudioRecording = {
@@ -620,19 +649,24 @@ export default function Notes() {
             transcribed: false,
           };
 
-          setAudioRecordings(prev => {
-            const updated = [newRecording, ...prev];
-            // Save to localStorage
-            if (selectedNote) {
-              const saveData = updated.map(rec => ({
-                ...rec,
-                blob: Array.from(new Uint8Array(await rec.blob.arrayBuffer())),
-                timestamp: rec.timestamp.toISOString(),
-              }));
+          const updatedRecordings = [newRecording, ...audioRecordings];
+          setAudioRecordings(updatedRecordings);
+          
+          // Save to localStorage
+          if (selectedNote) {
+            try {
+              const saveData = await Promise.all(
+                updatedRecordings.map(async (rec) => ({
+                  ...rec,
+                  blob: await blobToArray(rec.blob),
+                  timestamp: rec.timestamp.toISOString(),
+                }))
+              );
               localStorage.setItem(`audio_recordings_${selectedNote.id}`, JSON.stringify(saveData));
+            } catch (error) {
+              console.error("Error saving recordings:", error);
             }
-            return updated;
-          });
+          }
 
           toast.success("Recording saved");
         };
@@ -706,56 +740,43 @@ export default function Notes() {
     setIsTranscribing(true);
     
     try {
-      // Convert blob to base64 for API
-      const reader = new FileReader();
-      reader.readAsDataURL(recording.blob);
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          noteId: selectedNote?.id,
+          recordingId,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Transcription failed");
+
+      const { transcription } = await response.json();
       
-      reader.onloadend = async () => {
-        const base64Audio = reader.result as string;
-        const base64Data = base64Audio.split(',')[1];
-        
-        // Call transcription API (this is a placeholder - implement your own endpoint)
-        const response = await fetch("/api/transcribe", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            audio: base64Data,
-            noteId: selectedNote?.id,
-            recordingId,
-          }),
+      setAudioRecordings(prev =>
+        prev.map(rec =>
+          rec.id === recordingId
+            ? { ...rec, transcribed: true, transcription }
+            : rec
+        )
+      );
+
+      if (selectedNote && transcription) {
+        const timestamp = recording.timestamp.toLocaleTimeString([], { 
+          hour: '2-digit', 
+          minute: '2-digit' 
         });
-
-        if (!response.ok) throw new Error("Transcription failed");
-
-        const { transcription } = await response.json();
+        const newContent = editedContent 
+          ? `${editedContent}\n\n---\n**Recording (${timestamp}):**\n${transcription}`
+          : `**Recording (${timestamp}):**\n${transcription}`;
         
-        // Update recording with transcription
-        setAudioRecordings(prev =>
-          prev.map(rec =>
-            rec.id === recordingId
-              ? { ...rec, transcribed: true, transcription }
-              : rec
-          )
-        );
+        setEditedContent(newContent);
+        setHasUnsavedChanges(true);
+      }
 
-        // Append transcription to note content
-        if (selectedNote && transcription) {
-          const timestamp = recording.timestamp.toLocaleTimeString([], { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          });
-          const newContent = editedContent 
-            ? `${editedContent}\n\n---\n**Recording (${timestamp}):**\n${transcription}`
-            : `**Recording (${timestamp}):**\n${transcription}`;
-          
-          setEditedContent(newContent);
-          setHasUnsavedChanges(true);
-        }
-
-        toast.success("Transcription completed");
-      };
+      toast.success("Transcription completed");
     } catch (error) {
       console.error("Error transcribing audio:", error);
       toast.error("Failed to transcribe audio");
@@ -1188,7 +1209,6 @@ export default function Notes() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => {
-                                // Add transcription to note
                                 if (recording.transcription) {
                                   const newContent = editedContent 
                                     ? `${editedContent}\n\n${recording.transcription}`
@@ -1204,7 +1224,16 @@ export default function Notes() {
                               <DropdownMenuItem 
                                 className="text-destructive"
                                 onClick={() => {
-                                  setAudioRecordings(audioRecordings.filter(r => r.id !== recording.id));
+                                  const updated = audioRecordings.filter(r => r.id !== recording.id);
+                                  setAudioRecordings(updated);
+                                  if (selectedNote) {
+                                    const saveData = updated.map(rec => ({
+                                      ...rec,
+                                      blob: Array.from(new Uint8Array()),
+                                      timestamp: rec.timestamp.toISOString(),
+                                    }));
+                                    localStorage.setItem(`audio_recordings_${selectedNote.id}`, JSON.stringify(saveData));
+                                  }
                                   toast.success("Recording deleted");
                                 }}
                               >
@@ -1436,7 +1465,7 @@ export default function Notes() {
               onClick={() => setIsTemplateDialogOpen(true)}
               className="gap-2"
             >
-              <FileBox className="h-4 w-4" /> {/* Changed from Template to FileBox */}
+              <FileBox className="h-4 w-4" />
               Templates
             </Button>
             <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
@@ -1513,7 +1542,7 @@ export default function Notes() {
                   {searchQuery ? "No notes match your search" : "Create your first meeting note"}
                 </p>
                 <Button onClick={() => setIsTemplateDialogOpen(true)} className="gap-2">
-                  <FileBox className="h-4 w-4" /> {/* Changed from Template to FileBox */}
+                  <FileBox className="h-4 w-4" />
                   Start with Template
                 </Button>
               </Card>
@@ -1619,7 +1648,7 @@ export default function Notes() {
           </TabsContent>
         </Tabs>
 
-        {/* Template Selection Dialog - Fixed sizing */}
+        {/* Template Selection Dialog */}
         <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
@@ -1693,7 +1722,6 @@ export default function Notes() {
                                   className="h-6 w-6 p-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    // Edit template functionality would go here
                                     toast.info("Edit template feature coming soon!");
                                   }}
                                 >
@@ -1899,7 +1927,6 @@ export default function Notes() {
                         const template = allTemplates.find(t => t.id === value);
                         if (template) applyTemplate(template);
                       } else {
-                        // Clear template
                         setNewNote({
                           ...newNote,
                           template_id: "",
