@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -68,41 +69,122 @@ import {
   Eye,
   EyeOff,
   Mail,
+  Play,
+  Pause,
+  Volume2,
+  Save,
+  X,
+  FilePlus,
+  Template,
+  Settings,
+  Grid,
+  List,
+  Columns,
+  Layers,
+  Star,
+  StarOff,
+  DownloadCloud,
+  UploadCloud,
+  FolderPlus,
+  CopyPlus,
+  Edit3,
+  Trash,
+  FolderTree,
+  ChevronDown,
+  ChevronUp,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
+  Headphones,
 } from "lucide-react";
 import { useMeetingNotes } from "@/hooks/useMeetingNotes";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { Slider } from "@/components/ui/slider";
 
-// Meeting template types
-const MEETING_TEMPLATES = {
-  "client-call": {
+// Default meeting templates
+const DEFAULT_TEMPLATES = [
+  {
+    id: "client-call",
     name: "Client Meeting",
-    sections: ["Agenda", "Client Details", "Discussion Points", "Decisions", "Next Steps", "Action Items"],
-    defaultTags: ["client", "external"]
+    description: "For client discussions and follow-ups",
+    icon: "👔",
+    color: "blue",
+    sections: [
+      { title: "Agenda", content: "", placeholder: "Meeting agenda items..." },
+      { title: "Client Details", content: "", placeholder: "Client name, company, role..." },
+      { title: "Discussion Points", content: "", placeholder: "Key discussion topics..." },
+      { title: "Decisions Made", content: "", placeholder: "Agreements and decisions..." },
+      { title: "Next Steps", content: "", placeholder: "Follow-up actions..." },
+      { title: "Action Items", content: "", placeholder: "Specific tasks with owners and deadlines..." },
+    ],
+    tags: ["client", "external", "business"],
+    defaultDuration: 60,
   },
-  "project-kickoff": {
+  {
+    id: "project-kickoff",
     name: "Project Kickoff",
-    sections: ["Project Overview", "Goals & Objectives", "Team Roles", "Timeline", "Risks & Dependencies", "Action Items"],
-    defaultTags: ["project", "internal"]
+    description: "Start new projects with clear objectives",
+    icon: "🚀",
+    color: "purple",
+    sections: [
+      { title: "Project Overview", content: "", placeholder: "Project name, goals, scope..." },
+      { title: "Goals & Objectives", content: "", placeholder: "Key success metrics..." },
+      { title: "Team Roles", content: "", placeholder: "Team member responsibilities..." },
+      { title: "Timeline", content: "", placeholder: "Milestones and deadlines..." },
+      { title: "Risks & Dependencies", content: "", placeholder: "Potential challenges..." },
+      { title: "Action Items", content: "", placeholder: "Immediate next steps..." },
+    ],
+    tags: ["project", "internal", "planning"],
+    defaultDuration: 90,
   },
-  "one-on-one": {
+  {
+    id: "one-on-one",
     name: "1:1 Meeting",
-    sections: ["Check-in", "Updates", "Feedback", "Career Growth", "Blockers", "Action Items"],
-    defaultTags: ["internal", "hr"]
+    description: "Personal development and feedback sessions",
+    icon: "👥",
+    color: "green",
+    sections: [
+      { title: "Check-in", content: "", placeholder: "How are you feeling about work?" },
+      { title: "Updates", content: "", placeholder: "Recent accomplishments and challenges..." },
+      { title: "Feedback", content: "", placeholder: "Constructive feedback both ways..." },
+      { title: "Career Growth", content: "", placeholder: "Development goals and opportunities..." },
+      { title: "Blockers", content: "", placeholder: "What's preventing progress?" },
+      { title: "Action Items", content: "", placeholder: "Agreed next steps..." },
+    ],
+    tags: ["internal", "hr", "development"],
+    defaultDuration: 30,
   },
-  "board-meeting": {
-    name: "Board Meeting",
-    sections: ["Minutes", "Financial Review", "Strategic Decisions", "Voting Items", "Action Items"],
-    defaultTags: ["board", "executive"]
-  },
-  "brainstorm": {
+  {
+    id: "brainstorm",
     name: "Brainstorming",
-    sections: ["Problem Statement", "Ideas", "Voting", "Selected Ideas", "Next Steps"],
-    defaultTags: ["creative", "planning"]
-  }
-};
+    description: "Creative idea generation sessions",
+    icon: "💡",
+    color: "yellow",
+    sections: [
+      { title: "Problem Statement", content: "", placeholder: "What are we trying to solve?" },
+      { title: "Ideas", content: "", placeholder: "All ideas (no filtering)..." },
+      { title: "Voting", content: "", placeholder: "Top ideas selection..." },
+      { title: "Selected Ideas", content: "", placeholder: "Final selected concepts..." },
+      { title: "Next Steps", content: "", placeholder: "Implementation plan..." },
+    ],
+    tags: ["creative", "planning", "innovation"],
+    defaultDuration: 60,
+  },
+];
+
+// Audio recording interface
+interface AudioRecording {
+  id: string;
+  blob: Blob;
+  url: string;
+  duration: number;
+  timestamp: Date;
+  transcribed: boolean;
+  transcription?: string;
+}
 
 export default function Notes() {
   const [searchParams] = useSearchParams();
@@ -127,18 +209,11 @@ export default function Notes() {
     exportNote,
     shareNote,
     duplicateNote,
-    // New hooks for enhanced features
-    addAttendee,
-    removeAttendee,
-    addAttachment,
-    removeAttachment,
-    addComment,
-    updateComment,
-    deleteComment,
-    setReminder,
-    addToProject,
-    syncWithTaskManager,
-    getMeetingAnalytics,
+    // Template management
+    templates,
+    createTemplate,
+    updateTemplate,
+    deleteTemplate,
   } = useMeetingNotes();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -147,9 +222,22 @@ export default function Notes() {
   const [activeTab, setActiveTab] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isCreateTemplateDialogOpen, setIsCreateTemplateDialogOpen] = useState(false);
   
-  // Enhanced new note state with meeting-specific fields
+  // Audio recording states
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [audioRecordings, setAudioRecordings] = useState<AudioRecording[]>([]);
+  const [currentPlayingAudio, setCurrentPlayingAudio] = useState<string | null>(null);
+  const [audioPlaybackRate, setAudioPlaybackRate] = useState(1);
+  const [audioVolume, setAudioVolume] = useState(1);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Enhanced new note state
   const [newNote, setNewNote] = useState({
     title: "",
     text_note: "",
@@ -162,9 +250,8 @@ export default function Notes() {
     location: "",
     tags: [] as string[],
     attachments: [] as any[],
-    is_recurring: false,
-    recurrence_pattern: "",
-    linked_entities: [] as { type: string; id: string; name: string }[],
+    sections: [] as Array<{ title: string; content: string }>,
+    template_id: "",
   });
 
   // For viewing/editing a single note
@@ -175,40 +262,34 @@ export default function Notes() {
   const [editedAttendees, setEditedAttendees] = useState<string[]>([]);
   const [editedTags, setEditedTags] = useState<string[]>([]);
   const [editedActionItems, setEditedActionItems] = useState<any[]>([]);
+  const [editedSections, setEditedSections] = useState<Array<{ title: string; content: string }>>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [newAttendee, setNewAttendee] = useState("");
   const [newTag, setNewTag] = useState("");
   const [newActionItem, setNewActionItem] = useState("");
-  const [newComment, setNewComment] = useState("");
-  const [showComments, setShowComments] = useState(false);
-  const [selectedAttachment, setSelectedAttachment] = useState<any>(null);
-
-  // Voice recording states
-  const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [newSectionTitle, setNewSectionTitle] = useState("");
+  
+  // Template creation state
+  const [customTemplate, setCustomTemplate] = useState({
+    name: "",
+    description: "",
+    icon: "📝",
+    color: "blue",
+    sections: [{ title: "Notes", content: "", placeholder: "Start typing..." }],
+    tags: [] as string[],
+    defaultDuration: 60,
+  });
 
   // Auto-save timer
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSaveRef = useRef<number>(Date.now());
 
-  // Projects and contacts (would come from API)
-  const [projects] = useState([
-    { id: "proj-1", name: "Q4 Planning", color: "blue" },
-    { id: "proj-2", name: "Acme Corp", color: "green" },
-    { id: "proj-3", name: "Product Launch", color: "purple" },
-  ]);
-
-  const [contacts] = useState([
-    { id: "user-1", name: "John Doe", email: "john@example.com", role: "PM" },
-    { id: "user-2", name: "Jane Smith", email: "jane@example.com", role: "Design" },
-    { id: "user-3", name: "Bob Johnson", email: "bob@example.com", role: "Engineering" },
-  ]);
+  // All templates (default + custom)
+  const allTemplates = useMemo(() => {
+    return [...DEFAULT_TEMPLATES, ...(templates || [])];
+  }, [templates]);
 
   // If we have a noteId in URL, show that note
   useEffect(() => {
@@ -222,34 +303,33 @@ export default function Notes() {
         setEditedAttendees(foundNote.attendees || []);
         setEditedTags(foundNote.tags || []);
         setEditedActionItems(foundNote.ai_action_items || []);
+        setEditedSections(foundNote.sections || []);
+        
+        // Load audio recordings for this note
+        const noteRecordings = localStorage.getItem(`audio_recordings_${foundNote.id}`);
+        if (noteRecordings) {
+          try {
+            const parsed = JSON.parse(noteRecordings);
+            setAudioRecordings(parsed.map((rec: any) => ({
+              ...rec,
+              timestamp: new Date(rec.timestamp),
+              blob: new Blob([rec.blob], { type: 'audio/webm' }),
+            })));
+          } catch (error) {
+            console.error("Error loading audio recordings:", error);
+          }
+        }
+        
         setHasUnsavedChanges(false);
         setAutoSaveStatus("saved");
       }
     } else {
       setSelectedNote(null);
+      setAudioRecordings([]);
       setHasUnsavedChanges(false);
       setAutoSaveStatus("idle");
     }
   }, [noteIdFromQuery, notes]);
-
-  // Auto-save functionality with status tracking
-  useEffect(() => {
-    if (hasUnsavedChanges && selectedNote) {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
-      
-      autoSaveTimerRef.current = setTimeout(async () => {
-        await handleSaveNote();
-      }, 1500); // Auto-save after 1.5 seconds of inactivity
-    }
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
-    };
-  }, [hasUnsavedChanges, editedTitle, editedContent, editedAgenda, editedAttendees, editedTags]);
 
   // Handle beforeunload to warn about unsaved changes
   useEffect(() => {
@@ -264,191 +344,99 @@ export default function Notes() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
-  // Enhanced save with proper error handling and status
-  const handleSaveNote = async () => {
-    if (!selectedNote) return;
-    
-    if (!editedTitle.trim()) {
-      toast.error("Title is required");
-      return;
-    }
-
-    setIsProcessing(true);
-    setAutoSaveStatus("saving");
-
-    try {
-      const updateData: any = {
-        title: editedTitle,
-        text_note: editedContent,
-        agenda: editedAgenda,
-        attendees: editedAttendees,
-        tags: editedTags,
-      };
-
-      // Only update action items if changed
-      if (JSON.stringify(editedActionItems) !== JSON.stringify(selectedNote.ai_action_items || [])) {
-        updateData.ai_action_items = editedActionItems;
-      }
-
-      await updateNote(selectedNote.id, updateData);
-      
-      setHasUnsavedChanges(false);
-      setAutoSaveStatus("saved");
-      lastSaveRef.current = Date.now();
-      
-      toast.success("Note saved successfully");
-      
-      // Clear saved status after 2 seconds
-      setTimeout(() => {
-        if (autoSaveStatus === "saved" && !hasUnsavedChanges) {
-          setAutoSaveStatus("idle");
-        }
-      }, 2000);
-
-    } catch (error) {
-      console.error("Error saving note:", error);
-      setAutoSaveStatus("idle");
-      toast.error("Failed to save note. Please try again.");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // Enhanced create note with validation
-  const handleCreateNote = async () => {
-    if (!newNote.title.trim()) {
-      toast.error("Title is required");
-      return;
-    }
-
-    setIsProcessing(true);
-
-    try {
-      const created = await createNote({
-        ...newNote,
-        // Add timestamp
-        meeting_date: new Date().toISOString(),
-        // Ensure required fields
-        attendees: newNote.attendees || [],
-        tags: newNote.tags || [],
-        ai_action_items: [],
-        status: "draft",
-      });
-
-      if (created?.id) {
-        // Reset form
-        setNewNote({
-          title: "",
-          text_note: "",
-          category: "general",
-          meeting_type: "general",
-          project_id: "",
-          agenda: "",
-          attendees: [],
-          duration: 60,
-          location: "",
-          tags: [],
-          attachments: [],
-          is_recurring: false,
-          recurrence_pattern: "",
-          linked_entities: [],
-        });
-
-        setIsCreateDialogOpen(false);
-        toast.success("Note created successfully");
-        
-        // Navigate to the new note
-        navigate(`/notes?note=${created.id}`);
-      }
-    } catch (error) {
-      console.error("Error creating note:", error);
-      toast.error("Failed to create note");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   // Apply template to new note
-  const applyTemplate = (templateKey: keyof typeof MEETING_TEMPLATES) => {
-    const template = MEETING_TEMPLATES[templateKey];
+  const applyTemplate = (template: any) => {
+    const today = new Date();
+    const dateStr = today.toLocaleDateString();
     
-    const templateContent = template.sections.map(section => 
-      `## ${section}\n\n`
-    ).join('\n');
-
-    setNewNote(prev => ({
-      ...prev,
-      meeting_type: templateKey,
-      text_note: templateContent,
-      tags: [...prev.tags, ...template.defaultTags],
-    }));
+    setNewNote({
+      title: `${template.name} - ${dateStr}`,
+      text_note: template.sections.map((section: any) => `## ${section.title}\n\n${section.placeholder || ''}`).join('\n\n'),
+      category: "meeting",
+      meeting_type: template.id,
+      project_id: "",
+      agenda: "",
+      attendees: [],
+      duration: template.defaultDuration || 60,
+      location: "",
+      tags: [...template.tags, "template"],
+      attachments: [],
+      sections: template.sections.map((section: any) => ({
+        title: section.title,
+        content: section.placeholder || "",
+      })),
+      template_id: template.id,
+    });
 
     setIsTemplateDialogOpen(false);
-    toast.success(`Applied ${template.name} template`);
+    setIsCreateDialogOpen(true);
+    toast.success(`Applied "${template.name}" template`);
   };
 
-  // Extract action items from content
-  const handleExtractActionItems = async () => {
-    if (!selectedNote) return;
+  // Create custom template
+  const handleCreateTemplate = async () => {
+    if (!customTemplate.name.trim()) {
+      toast.error("Template name is required");
+      return;
+    }
+
+    if (customTemplate.sections.length === 0) {
+      toast.error("Add at least one section");
+      return;
+    }
 
     try {
-      const extracted = await extractActionItems(selectedNote.id, editedContent);
-      if (extracted && extracted.length > 0) {
-        setEditedActionItems(extracted);
-        setHasUnsavedChanges(true);
-        toast.success(`Extracted ${extracted.length} action items`);
-      }
+      await createTemplate(customTemplate);
+      toast.success("Template created successfully");
+      setIsCreateTemplateDialogOpen(false);
+      setCustomTemplate({
+        name: "",
+        description: "",
+        icon: "📝",
+        color: "blue",
+        sections: [{ title: "Notes", content: "", placeholder: "Start typing..." }],
+        tags: [],
+        defaultDuration: 60,
+      });
     } catch (error) {
-      console.error("Error extracting action items:", error);
-      toast.error("Failed to extract action items");
+      console.error("Error creating template:", error);
+      toast.error("Failed to create template");
     }
   };
 
-  // Sync with calendar
-  const handleSyncCalendar = async () => {
-    if (!selectedNote) return;
-
-    try {
-      await syncWithCalendar(selectedNote.id);
-      toast.success("Synced with calendar");
-    } catch (error) {
-      console.error("Error syncing with calendar:", error);
-      toast.error("Failed to sync with calendar");
+  // Add section to template
+  const addTemplateSection = () => {
+    if (newSectionTitle.trim()) {
+      setCustomTemplate(prev => ({
+        ...prev,
+        sections: [
+          ...prev.sections,
+          { 
+            title: newSectionTitle.trim(), 
+            content: "",
+            placeholder: `Add content for ${newSectionTitle.trim().toLowerCase()}...`
+          }
+        ]
+      }));
+      setNewSectionTitle("");
     }
   };
 
-  // Export note
-  const handleExportNote = async (format: 'pdf' | 'docx' | 'markdown') => {
-    if (!selectedNote) return;
-
-    try {
-      const exported = await exportNote(selectedNote.id, format);
-      // In a real app, this would trigger a download
-      toast.success(`Exported as ${format.toUpperCase()}`);
-    } catch (error) {
-      console.error("Error exporting note:", error);
-      toast.error("Failed to export note");
-    }
-  };
-
-  // Share note
-  const handleShareNote = async (method: 'link' | 'email') => {
-    if (!selectedNote) return;
-
-    try {
-      await shareNote(selectedNote.id, method);
-      toast.success(`Note shared via ${method}`);
-    } catch (error) {
-      console.error("Error sharing note:", error);
-      toast.error("Failed to share note");
-    }
-  };
-
-  // Voice recording functions
+  // Enhanced voice recording with playback functionality
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100,
+        }
+      });
+      
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus',
+      });
+      
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -459,9 +447,42 @@ export default function Notes() {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await transcribeAudio(audioBlob);
+        const audioBlob = new Blob(audioChunksRef.current, { 
+          type: 'audio/webm'
+        });
         
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        
+        audio.onloadedmetadata = () => {
+          const duration = audio.duration;
+          
+          const newRecording: AudioRecording = {
+            id: `rec_${Date.now()}`,
+            blob: audioBlob,
+            url: audioUrl,
+            duration,
+            timestamp: new Date(),
+            transcribed: false,
+          };
+
+          setAudioRecordings(prev => {
+            const updated = [newRecording, ...prev];
+            // Save to localStorage
+            if (selectedNote) {
+              const saveData = updated.map(rec => ({
+                ...rec,
+                blob: Array.from(new Uint8Array(rec.blob)),
+                timestamp: rec.timestamp.toISOString(),
+              }));
+              localStorage.setItem(`audio_recordings_${selectedNote.id}`, JSON.stringify(saveData));
+            }
+            return updated;
+          });
+
+          toast.success("Recording saved");
+        };
+
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -473,10 +494,10 @@ export default function Notes() {
         setRecordingTime(prev => prev + 1);
       }, 1000);
 
-      toast.info("Recording started");
+      toast.info("Recording started...");
     } catch (error) {
       console.error("Error starting recording:", error);
-      toast.error("Could not access microphone. Please check permissions.");
+      toast.error("Microphone access denied. Please check permissions.");
     }
   };
 
@@ -489,127 +510,111 @@ export default function Notes() {
         clearInterval(recordingIntervalRef.current);
       }
 
-      toast.info("Recording stopped, transcribing...");
+      toast.info("Processing recording...");
     }
   };
 
-  const transcribeAudio = async (audioBlob: Blob) => {
+  // Audio playback functionality
+  const playAudio = (recordingId: string) => {
+    if (currentPlayingAudio === recordingId) {
+      // Pause if already playing
+      if (audioRef.current) {
+        audioRef.current.pause();
+        setCurrentPlayingAudio(null);
+      }
+    } else {
+      // Stop current playback and start new one
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      
+      const recording = audioRecordings.find(r => r.id === recordingId);
+      if (recording) {
+        const audio = new Audio(recording.url);
+        audio.playbackRate = audioPlaybackRate;
+        audio.volume = audioVolume;
+        
+        audio.onended = () => {
+          setCurrentPlayingAudio(null);
+        };
+        
+        audio.play();
+        setCurrentPlayingAudio(recordingId);
+        audioRef.current = audio;
+      }
+    }
+  };
+
+  const transcribeRecording = async (recordingId: string) => {
+    const recording = audioRecordings.find(r => r.id === recordingId);
+    if (!recording) return;
+
     setIsTranscribing(true);
     
     try {
-      // Convert blob to base64
+      // Convert blob to base64 for API
       const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
+      reader.readAsDataURL(recording.blob);
       
       reader.onloadend = async () => {
         const base64Audio = reader.result as string;
         const base64Data = base64Audio.split(',')[1];
         
-        // Call Claude API for transcription
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
+        // Call transcription API
+        const response = await fetch("/api/transcribe", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 1000,
-            messages: [
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "text",
-                    text: "Please transcribe this audio recording. Provide only the transcription text, no additional commentary."
-                  }
-                ]
-              }
-            ],
-          })
+            audio: base64Data,
+            noteId: selectedNote?.id,
+            recordingId,
+          }),
         });
 
-        if (!response.ok) {
-          throw new Error("Transcription failed");
-        }
+        if (!response.ok) throw new Error("Transcription failed");
 
-        const data = await response.json();
-        const transcription = data.content
-          .map((item: any) => (item.type === "text" ? item.text : ""))
-          .join("\n");
+        const { transcription } = await response.json();
+        
+        // Update recording with transcription
+        setAudioRecordings(prev =>
+          prev.map(rec =>
+            rec.id === recordingId
+              ? { ...rec, transcribed: true, transcription }
+              : rec
+          )
+        );
 
         // Append transcription to note content
-        if (selectedNote) {
-          const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (selectedNote && transcription) {
+          const timestamp = recording.timestamp.toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          });
           const newContent = editedContent 
             ? `${editedContent}\n\n---\n**Recording (${timestamp}):**\n${transcription}`
             : `**Recording (${timestamp}):**\n${transcription}`;
           
           setEditedContent(newContent);
           setHasUnsavedChanges(true);
-          toast.success("Transcription added to note");
-        } else {
-          // If no note selected, open create dialog with transcription
-          setNewNote(prev => ({
-            ...prev,
-            text_note: transcription,
-            title: transcription.split('\n')[0].slice(0, 50) + (transcription.length > 50 ? '...' : '')
-          }));
-          setIsCreateDialogOpen(true);
         }
+
+        toast.success("Transcription completed");
       };
     } catch (error) {
       console.error("Error transcribing audio:", error);
-      toast.error("Failed to transcribe audio. Please try again.");
+      toast.error("Failed to transcribe audio");
     } finally {
       setIsTranscribing(false);
     }
   };
 
-  // Add attendee
-  const handleAddAttendee = () => {
-    if (newAttendee.trim() && !editedAttendees.includes(newAttendee.trim())) {
-      setEditedAttendees([...editedAttendees, newAttendee.trim()]);
-      setHasUnsavedChanges(true);
-      setNewAttendee("");
-    }
-  };
-
-  // Add tag
-  const handleAddTag = () => {
-    if (newTag.trim() && !editedTags.includes(newTag.trim())) {
-      setEditedTags([...editedTags, newTag.trim()]);
-      setHasUnsavedChanges(true);
-      setNewTag("");
-    }
-  };
-
-  // Add action item
-  const handleAddActionItem = () => {
-    if (newActionItem.trim()) {
-      const newItem = {
-        id: `action-${Date.now()}`,
-        text: newActionItem.trim(),
-        completed: false,
-        assignee: "",
-        due_date: "",
-        priority: "medium",
-      };
-      
-      setEditedActionItems([...editedActionItems, newItem]);
-      setHasUnsavedChanges(true);
-      setNewActionItem("");
-      toast.success("Action item added");
-    }
-  };
-
-  // Toggle action item completion
-  const toggleActionItem = (id: string) => {
-    setEditedActionItems(items =>
-      items.map(item =>
-        item.id === id ? { ...item, completed: !item.completed } : item
-      )
-    );
-    setHasUnsavedChanges(true);
+  // Format recording time
+  const formatRecordingTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Filter notes based on search, category, and tab
@@ -658,15 +663,8 @@ export default function Notes() {
   if (loading) {
     return (
       <Layout>
-        <div className="max-w-7xl mx-auto p-4 md:p-6">
-          <div className="animate-pulse space-y-4">
-            <div className="h-10 w-48 bg-secondary rounded" />
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="h-48 bg-secondary rounded" />
-              ))}
-            </div>
-          </div>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       </Layout>
     );
@@ -678,7 +676,7 @@ export default function Notes() {
       <Layout>
         <div className="max-w-6xl mx-auto">
           {/* Header */}
-          <div className="sticky top-0 z-50 bg-background border-b px-4 py-3 flex items-center justify-between">
+          <div className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Button 
                 variant="ghost" 
@@ -691,6 +689,7 @@ export default function Notes() {
                   }
                   navigate("/notes");
                 }}
+                className="hover:bg-accent"
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 <span className="hidden sm:inline">All Notes</span>
@@ -698,36 +697,40 @@ export default function Notes() {
               
               <div className="hidden sm:flex items-center gap-2">
                 {autoSaveStatus === "saving" && (
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="text-xs animate-pulse">
                     <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                     Saving...
                   </Badge>
                 )}
                 {autoSaveStatus === "saved" && (
                   <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                    <CheckCircle className="h-3 w-3 mr-1" />
                     Saved
                   </Badge>
                 )}
                 {hasUnsavedChanges && autoSaveStatus === "idle" && (
                   <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
-                    Unsaved changes
+                    <AlertCircle className="h-3 w-3 mr-1" />
+                    Unsaved
                   </Badge>
                 )}
               </div>
             </div>
             
             <div className="flex items-center gap-2">
-              {/* Quick actions */}
               <Button 
                 variant="outline" 
                 size="sm"
                 onClick={handleSaveNote}
                 disabled={isProcessing || !hasUnsavedChanges}
+                className="gap-1"
               >
                 {isProcessing ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : null}
-                Save
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                <span className="hidden sm:inline">Save</span>
               </Button>
               
               <DropdownMenu>
@@ -736,7 +739,7 @@ export default function Notes() {
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuItem onClick={() => togglePinNote(selectedNote.id, !selectedNote.is_pinned)}>
                     {selectedNote.is_pinned ? (
                       <>
@@ -754,9 +757,9 @@ export default function Notes() {
                     <Zap className="h-4 w-4 mr-2" />
                     Extract Action Items
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleSyncCalendar}>
-                    <CalendarDays className="h-4 w-4 mr-2" />
-                    Sync to Calendar
+                  <DropdownMenuItem onClick={() => generateAISummary(selectedNote.id)}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    AI Summary
                   </DropdownMenuItem>
                   <DropdownMenu>
                     <DropdownMenuTrigger className="w-full">
@@ -766,39 +769,17 @@ export default function Notes() {
                       </div>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleExportNote('pdf')}>
+                      <DropdownMenuItem onClick={() => exportNote(selectedNote.id, 'pdf')}>
                         PDF
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExportNote('docx')}>
+                      <DropdownMenuItem onClick={() => exportNote(selectedNote.id, 'docx')}>
                         Word
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExportNote('markdown')}>
+                      <DropdownMenuItem onClick={() => exportNote(selectedNote.id, 'markdown')}>
                         Markdown
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="w-full">
-                      <div className="flex items-center">
-                        <Share2 className="h-4 w-4 mr-2" />
-                        Share
-                      </div>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleShareNote('link')}>
-                        <Link className="h-4 w-4 mr-2" />
-                        Copy Link
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleShareNote('email')}>
-                        <Mail className="h-4 w-4 mr-2" />
-                        Email
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <DropdownMenuItem onClick={handleGenerateAISummary}>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    AI Summary
-                  </DropdownMenuItem>
                   <Separator />
                   <DropdownMenuItem 
                     className="text-destructive"
@@ -844,7 +825,7 @@ export default function Notes() {
                         setEditedAgenda(e.target.value);
                         setHasUnsavedChanges(true);
                       }}
-                      placeholder="Meeting agenda..."
+                      placeholder="Meeting agenda items..."
                       className="min-h-[80px]"
                     />
                   </div>
@@ -975,18 +956,111 @@ export default function Notes() {
                 </div>
               </Card>
 
-              {/* AI Summary */}
-              {selectedNote.ai_summary && (
-                <Card className="p-4 border-primary/20 bg-primary/5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Sparkles className="h-5 w-5 text-primary" />
-                    <h3 className="font-semibold">AI Summary</h3>
+              {/* Audio Recordings */}
+              {audioRecordings.length > 0 && (
+                <Card className="p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Headphones className="h-5 w-5 text-primary" />
+                      <h3 className="font-semibold">Voice Recordings</h3>
+                      <Badge variant="outline">
+                        {audioRecordings.length}
+                      </Badge>
+                    </div>
                   </div>
-                  <p className="text-foreground">{selectedNote.ai_summary}</p>
+
+                  <div className="space-y-3">
+                    {audioRecordings.map((recording) => (
+                      <div
+                        key={recording.id}
+                        className="flex items-center justify-between p-3 rounded-lg border"
+                      >
+                        <div className="flex items-center gap-3 flex-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => playAudio(recording.id)}
+                            className="h-10 w-10 rounded-full"
+                          >
+                            {currentPlayingAudio === recording.id ? (
+                              <Pause className="h-5 w-5" />
+                            ) : (
+                              <Play className="h-5 w-5" />
+                            )}
+                          </Button>
+                          
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              Recording {formatRecordingTime(Math.floor(recording.duration))}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {recording.timestamp.toLocaleTimeString([], { 
+                                hour: '2-digit', 
+                                minute: '2-digit' 
+                              })}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {!recording.transcribed && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => transcribeRecording(recording.id)}
+                              disabled={isTranscribing}
+                            >
+                              {isTranscribing ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Sparkles className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
+                          
+                          <Slider
+                            value={[audioVolume * 100]}
+                            onValueChange={([value]) => setAudioVolume(value / 100)}
+                            max={100}
+                            step={1}
+                            className="w-24"
+                          />
+                          
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => {
+                                // Add transcription to note
+                                if (recording.transcription) {
+                                  const newContent = editedContent 
+                                    ? `${editedContent}\n\n${recording.transcription}`
+                                    : recording.transcription;
+                                  setEditedContent(newContent);
+                                  setHasUnsavedChanges(true);
+                                  toast.success("Transcription added to note");
+                                }
+                              }}>
+                                <CopyPlus className="h-4 w-4 mr-2" />
+                                Add to Note
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="text-destructive">
+                                <Trash className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </Card>
               )}
 
-              {/* Main content */}
+              {/* Main content sections */}
               <Card className="p-4">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-semibold">Meeting Notes</h3>
@@ -994,46 +1068,116 @@ export default function Notes() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setShowComments(!showComments)}
+                      onClick={() => {
+                        const newSection = {
+                          title: "New Section",
+                          content: "",
+                        };
+                        setEditedSections([...editedSections, newSection]);
+                        setHasUnsavedChanges(true);
+                      }}
                     >
-                      {showComments ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-                      {showComments ? 'Hide Comments' : 'Show Comments'}
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Section
                     </Button>
                   </div>
                 </div>
-                <Textarea
-                  value={editedContent}
-                  onChange={(e) => {
-                    setEditedContent(e.target.value);
-                    setHasUnsavedChanges(true);
-                  }}
-                  placeholder="Start typing your meeting notes here..."
-                  className="min-h-[400px] resize-none"
-                />
+
+                {/* Sections */}
+                {editedSections.length > 0 ? (
+                  <div className="space-y-6">
+                    {editedSections.map((section, index) => (
+                      <div key={index} className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Input
+                            value={section.title}
+                            onChange={(e) => {
+                              const newSections = [...editedSections];
+                              newSections[index].title = e.target.value;
+                              setEditedSections(newSections);
+                              setHasUnsavedChanges(true);
+                            }}
+                            placeholder="Section Title"
+                            className="text-lg font-semibold border-0 px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const newSections = editedSections.filter((_, i) => i !== index);
+                              setEditedSections(newSections);
+                              setHasUnsavedChanges(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <Textarea
+                          value={section.content}
+                          onChange={(e) => {
+                            const newSections = [...editedSections];
+                            newSections[index].content = e.target.value;
+                            setEditedSections(newSections);
+                            setHasUnsavedChanges(true);
+                          }}
+                          placeholder="Start typing..."
+                          className="min-h-[100px]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Textarea
+                    value={editedContent}
+                    onChange={(e) => {
+                      setEditedContent(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    placeholder="Start typing your meeting notes here..."
+                    className="min-h-[400px] resize-none"
+                  />
+                )}
               </Card>
 
-              {/* Comments section */}
-              {showComments && (
-                <Card className="p-4">
-                  <h3 className="font-semibold mb-4">Comments</h3>
-                  <div className="space-y-4">
-                    <div className="flex gap-2">
-                      <Input
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
-                        placeholder="Add a comment..."
-                      />
-                      <Button onClick={() => {
-                        // Add comment logic here
-                        setNewComment("");
-                      }}>
-                        Comment
-                      </Button>
-                    </div>
-                    {/* Comments list would go here */}
+              {/* Voice recording button */}
+              <div className="fixed bottom-6 right-6 md:bottom-8 md:right-8 z-50">
+                {isRecording ? (
+                  <div className="flex flex-col items-end gap-2">
+                    <Card className="px-4 py-2 bg-red-50 border-red-200">
+                      <div className="flex items-center gap-2">
+                        <div className="h-3 w-3 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-sm font-medium">Recording</span>
+                        <span className="text-sm text-muted-foreground">
+                          {formatRecordingTime(recordingTime)}
+                        </span>
+                      </div>
+                    </Card>
+                    <Button
+                      size="lg"
+                      className="rounded-full h-16 w-16 shadow-lg bg-red-500 hover:bg-red-600"
+                      onClick={stopRecording}
+                    >
+                      <StopCircle className="h-6 w-6" />
+                    </Button>
                   </div>
-                </Card>
-              )}
+                ) : isTranscribing ? (
+                  <Button
+                    size="lg"
+                    className="rounded-full h-16 w-16 shadow-lg"
+                    disabled
+                  >
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </Button>
+                ) : (
+                  <Button
+                    size="lg"
+                    className="rounded-full h-16 w-16 shadow-lg"
+                    onClick={startRecording}
+                  >
+                    <Mic className="h-6 w-6" />
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Right column - Sidebar */}
@@ -1106,60 +1250,6 @@ export default function Notes() {
                   </div>
                 </div>
               </Card>
-
-              {/* Linked Projects */}
-              <Card className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-medium">Linked Projects</h3>
-                  <FolderOpen className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div className="space-y-2">
-                  {projects.map(project => (
-                    <div key={project.id} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div 
-                          className="w-2 h-2 rounded-full" 
-                          style={{ backgroundColor: project.color }}
-                        />
-                        <span className="text-sm">{project.name}</span>
-                      </div>
-                      <Switch checked={selectedNote.project_id === project.id} />
-                    </div>
-                  ))}
-                </div>
-              </Card>
-
-              {/* Voice recording button */}
-              <div className="fixed bottom-6 right-6 md:bottom-8 md:right-8">
-                {isRecording ? (
-                  <Button
-                    size="lg"
-                    className="rounded-full h-16 w-16 shadow-lg bg-red-500 hover:bg-red-600"
-                    onClick={stopRecording}
-                  >
-                    <div className="flex flex-col items-center">
-                      <StopCircle className="h-6 w-6" />
-                      <span className="text-xs mt-1">{recordingTime}s</span>
-                    </div>
-                  </Button>
-                ) : isTranscribing ? (
-                  <Button
-                    size="lg"
-                    className="rounded-full h-16 w-16 shadow-lg"
-                    disabled
-                  >
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  </Button>
-                ) : (
-                  <Button
-                    size="lg"
-                    className="rounded-full h-16 w-16 shadow-lg"
-                    onClick={startRecording}
-                  >
-                    <Mic className="h-6 w-6" />
-                  </Button>
-                )}
-              </div>
             </div>
           </div>
         </div>
@@ -1181,28 +1271,18 @@ export default function Notes() {
           </div>
           
           <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Note
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setIsTemplateDialogOpen(true)}>
-                  <FileText className="h-4 w-4 mr-2" />
-                  Use Template
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsCreateDialogOpen(true)}>
-                  <StickyNote className="h-4 w-4 mr-2" />
-                  Blank Note
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsTemplateDialogOpen(true)}
+              className="gap-2"
+            >
+              <Template className="h-4 w-4" />
+              Templates
+            </Button>
+            <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              New Note
+            </Button>
           </div>
         </div>
 
@@ -1236,16 +1316,16 @@ export default function Notes() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Projects</SelectItem>
-              {projects.map(project => (
-                <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
-              ))}
+              <SelectItem value="proj-1">Q4 Planning</SelectItem>
+              <SelectItem value="proj-2">Acme Corp</SelectItem>
+              <SelectItem value="proj-3">Product Launch</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid grid-cols-5 w-full">
+          <TabsList className="w-full overflow-x-auto">
             <TabsTrigger value="all">All</TabsTrigger>
             <TabsTrigger value="pinned">
               <Pin className="h-3 w-3 mr-2" />
@@ -1264,25 +1344,25 @@ export default function Notes() {
           
           <TabsContent value={activeTab} className="mt-4">
             {filteredNotes.length === 0 ? (
-              <div className="text-center py-12">
+              <Card className="p-8 text-center">
                 <div className="mx-auto w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
                   <StickyNote className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <h3 className="text-lg font-semibold text-foreground mb-2">No meeting notes yet</h3>
-                <p className="text-muted-foreground text-sm mb-4">
-                  Create your first meeting note or try adjusting your filters
+                <p className="text-muted-foreground text-sm mb-6">
+                  {searchQuery ? "No notes match your search" : "Create your first meeting note"}
                 </p>
-                <Button onClick={() => setIsTemplateDialogOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Meeting Note
+                <Button onClick={() => setIsTemplateDialogOpen(true)} className="gap-2">
+                  <Template className="h-4 w-4" />
+                  Start with Template
                 </Button>
-              </div>
+              </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredNotes.map((note) => (
                   <Card 
                     key={note.id} 
-                    className="p-4 hover:border-primary/50 transition-all cursor-pointer hover:shadow-md"
+                    className="p-4 hover:border-primary/50 transition-all cursor-pointer hover:shadow-md group"
                     onClick={() => navigate(`/notes?note=${note.id}`)}
                   >
                     <div className="space-y-3">
@@ -1298,61 +1378,25 @@ export default function Notes() {
                           </div>
                           
                           <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                            {note.agenda || note.ai_summary || "No agenda set"}
+                            {note.agenda || "No agenda set"}
                           </p>
                         </div>
                         
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                togglePinNote(note.id, !note.is_pinned);
-                                toast.success(note.is_pinned ? "Note unpinned" : "Note pinned");
-                              }}
-                            >
-                              {note.is_pinned ? (
-                                <>
-                                  <PinOff className="h-4 w-4 mr-2" />
-                                  Unpin
-                                </>
-                              ) : (
-                                <>
-                                  <Pin className="h-4 w-4 mr-2" />
-                                  Pin
-                                </>
-                              )}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                duplicateNote(note.id);
-                                toast.success("Note duplicated");
-                              }}
-                            >
-                              <Copy className="h-4 w-4 mr-2" />
-                              Duplicate
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              className="text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (confirm("Delete this note?")) {
-                                  deleteNote(note.id);
-                                  toast.success("Note deleted");
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePinNote(note.id, !note.is_pinned);
+                          }}
+                        >
+                          {note.is_pinned ? (
+                            <PinOff className="h-4 w-4" />
+                          ) : (
+                            <Pin className="h-4 w-4" />
+                          )}
+                        </Button>
                       </div>
                       
                       {/* Metadata */}
@@ -1404,21 +1448,6 @@ export default function Notes() {
                                   <span className="text-xs truncate">{item.text}</span>
                                 </div>
                               ))}
-                            {note.ai_action_items.filter(item => !item.completed).length > 2 && (
-                              <span className="text-xs text-muted-foreground">
-                                +{note.ai_action_items.filter(item => !item.completed).length - 2} more
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Attendees preview */}
-                      {note.attendees && note.attendees.length > 0 && (
-                        <div className="pt-2 border-t">
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <Users className="h-3 w-3" />
-                            <span>{note.attendees.length} attendees</span>
                           </div>
                         </div>
                       )}
@@ -1430,41 +1459,252 @@ export default function Notes() {
           </TabsContent>
         </Tabs>
 
-        {/* Template Selection Dialog */}
+        {/* Template Selection Dialog - Fixed sizing */}
         <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Choose a Meeting Template</DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-              {Object.entries(MEETING_TEMPLATES).map(([key, template]) => (
-                <Card
-                  key={key}
-                  className="p-4 hover:border-primary cursor-pointer transition-colors"
-                  onClick={() => applyTemplate(key as keyof typeof MEETING_TEMPLATES)}
+              <div className="flex items-center justify-between">
+                <DialogTitle>Choose a Template</DialogTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsCreateTemplateDialogOpen(true)}
                 >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold">{template.name}</h3>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Template
+                </Button>
+              </div>
+              <DialogDescription>
+                Select a template to start your meeting notes with a structured format
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="py-4">
+              <h3 className="font-medium mb-3">Default Templates</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {DEFAULT_TEMPLATES.map((template) => (
+                  <Card
+                    key={template.id}
+                    className="p-4 hover:border-primary cursor-pointer transition-colors hover:shadow-sm"
+                    onClick={() => applyTemplate(template)}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="text-2xl">{template.icon}</div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium">{template.name}</h4>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">{template.description}</p>
+                        <div className="flex items-center gap-2 mt-3">
+                          <Badge variant="outline" className="text-xs">
+                            {template.sections.length} sections
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {template.defaultDuration} min
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Sections: {template.sections.join(", ")}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {template.defaultTags.map(tag => (
-                        <Badge key={tag} variant="secondary" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Custom Templates */}
+              {templates && templates.length > 0 && (
+                <>
+                  <h3 className="font-medium mb-3 mt-6">Your Templates</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {templates.map((template) => (
+                      <Card
+                        key={template.id}
+                        className="p-4 hover:border-primary cursor-pointer transition-colors hover:shadow-sm group"
+                        onClick={() => applyTemplate(template)}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="text-2xl">{template.icon || "📝"}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-medium">{template.name}</h4>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Edit template
+                                  }}
+                                >
+                                  <Edit3 className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0 text-destructive"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm("Delete this template?")) {
+                                      deleteTemplate(template.id);
+                                    }
+                                  }}
+                                >
+                                  <Trash className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                            {template.description && (
+                              <p className="text-sm text-muted-foreground mt-1">{template.description}</p>
+                            )}
+                            <div className="flex items-center gap-2 mt-3">
+                              <Badge variant="outline" className="text-xs">
+                                {template.sections.length} sections
+                              </Badge>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
                   </div>
-                </Card>
-              ))}
+                </>
+              )}
             </div>
+            
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsTemplateDialogOpen(false)}>
                 Cancel
+              </Button>
+              <Button onClick={() => setIsCreateTemplateDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                New Custom Template
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Custom Template Dialog */}
+        <Dialog open={isCreateTemplateDialogOpen} onOpenChange={setIsCreateTemplateDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Create Custom Template</DialogTitle>
+              <DialogDescription>
+                Design your own meeting note template with custom sections
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="template-name">Template Name *</Label>
+                  <Input
+                    id="template-name"
+                    placeholder="Team Retrospective"
+                    value={customTemplate.name}
+                    onChange={(e) => setCustomTemplate({...customTemplate, name: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="template-icon">Icon</Label>
+                  <Select
+                    value={customTemplate.icon}
+                    onValueChange={(value) => setCustomTemplate({...customTemplate, icon: value})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select icon" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="📝">📝 Notes</SelectItem>
+                      <SelectItem value="👔">👔 Business</SelectItem>
+                      <SelectItem value="🚀">🚀 Project</SelectItem>
+                      <SelectItem value="💡">💡 Idea</SelectItem>
+                      <SelectItem value="👥">👥 Team</SelectItem>
+                      <SelectItem value="🎯">🎯 Goal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="template-description">Description</Label>
+                <Input
+                  id="template-description"
+                  placeholder="Template for team retrospective meetings"
+                  value={customTemplate.description}
+                  onChange={(e) => setCustomTemplate({...customTemplate, description: e.target.value})}
+                />
+              </div>
+
+              {/* Sections management */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label>Sections</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={addTemplateSection}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Section
+                  </Button>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Input
+                    value={newSectionTitle}
+                    onChange={(e) => setNewSectionTitle(e.target.value)}
+                    placeholder="New section title"
+                    onKeyPress={(e) => e.key === 'Enter' && addTemplateSection()}
+                  />
+                  <Button onClick={addTemplateSection}>Add</Button>
+                </div>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto p-2 border rounded-lg">
+                  {customTemplate.sections.map((section, index) => (
+                    <div key={index} className="flex items-center gap-2 p-2 hover:bg-accent rounded">
+                      <div className="flex-1">
+                        <Input
+                          value={section.title}
+                          onChange={(e) => {
+                            const newSections = [...customTemplate.sections];
+                            newSections[index].title = e.target.value;
+                            setCustomTemplate({...customTemplate, sections: newSections});
+                          }}
+                          placeholder="Section title"
+                        />
+                        <Textarea
+                          value={section.placeholder}
+                          onChange={(e) => {
+                            const newSections = [...customTemplate.sections];
+                            newSections[index].placeholder = e.target.value;
+                            setCustomTemplate({...customTemplate, sections: newSections});
+                          }}
+                          placeholder="Placeholder text"
+                          className="mt-1 text-sm"
+                          rows={2}
+                        />
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const newSections = customTemplate.sections.filter((_, i) => i !== index);
+                          setCustomTemplate({...customTemplate, sections: newSections});
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsCreateTemplateDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreateTemplate}>
+                Create Template
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1489,47 +1729,60 @@ export default function Notes() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="meeting_type">Meeting Type</Label>
+                  <Label htmlFor="meeting_type">Template</Label>
                   <Select
-                    value={newNote.meeting_type}
-                    onValueChange={(value) => setNewNote({ ...newNote, meeting_type: value })}
+                    value={newNote.template_id}
+                    onValueChange={(value) => {
+                      const template = allTemplates.find(t => t.id === value);
+                      if (template) applyTemplate(template);
+                    }}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select template" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="general">General</SelectItem>
-                      <SelectItem value="client-call">Client Call</SelectItem>
-                      <SelectItem value="project-kickoff">Project Kickoff</SelectItem>
-                      <SelectItem value="one-on-one">1:1 Meeting</SelectItem>
-                      <SelectItem value="board-meeting">Board Meeting</SelectItem>
-                      <SelectItem value="brainstorm">Brainstorming</SelectItem>
+                      <SelectItem value="">Blank Note</SelectItem>
+                      {allTemplates.map(template => (
+                        <SelectItem key={template.id} value={template.id}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="agenda">Agenda</Label>
-                <Textarea
-                  id="agenda"
-                  placeholder="Meeting agenda items..."
-                  value={newNote.agenda}
-                  onChange={(e) => setNewNote({ ...newNote, agenda: e.target.value })}
-                  rows={3}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="content">Notes</Label>
-                <Textarea
-                  id="content"
-                  placeholder="Start typing your meeting notes here..."
-                  value={newNote.text_note}
-                  onChange={(e) => setNewNote({ ...newNote, text_note: e.target.value })}
-                  rows={8}
-                />
-              </div>
+              {/* Template sections */}
+              {newNote.sections.length > 0 ? (
+                <div className="space-y-4">
+                  {newNote.sections.map((section, index) => (
+                    <div key={index} className="space-y-2">
+                      <Label>{section.title}</Label>
+                      <Textarea
+                        value={section.content}
+                        onChange={(e) => {
+                          const newSections = [...newNote.sections];
+                          newSections[index].content = e.target.value;
+                          setNewNote({ ...newNote, sections: newSections });
+                        }}
+                        placeholder={section.content || "Start typing..."}
+                        rows={4}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="content">Notes</Label>
+                  <Textarea
+                    id="content"
+                    placeholder="Start typing your meeting notes here..."
+                    value={newNote.text_note}
+                    onChange={(e) => setNewNote({ ...newNote, text_note: e.target.value })}
+                    rows={8}
+                  />
+                </div>
+              )}
 
               {/* Voice recording for new note */}
               <div className="flex justify-center">
@@ -1540,7 +1793,7 @@ export default function Notes() {
                     className="w-full"
                   >
                     <StopCircle className="h-4 w-4 mr-2" />
-                    Stop Recording ({recordingTime}s)
+                    Stop Recording ({formatRecordingTime(recordingTime)})
                   </Button>
                 ) : isTranscribing ? (
                   <Button disabled className="w-full">
