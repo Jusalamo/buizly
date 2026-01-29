@@ -75,7 +75,6 @@ import {
   Save,
   X,
   FilePlus,
-  Template,
   Settings,
   Grid,
   List,
@@ -96,6 +95,10 @@ import {
   Minimize2,
   RefreshCw,
   Headphones,
+  // Note: "Template" icon doesn't exist in lucide-react, using FileText instead
+  FileBox, // Using FileBox as template icon
+  FileCode, // Alternative for template
+  Palette, // For template customization
 } from "lucide-react";
 import { useMeetingNotes } from "@/hooks/useMeetingNotes";
 import { Label } from "@/components/ui/label";
@@ -344,6 +347,110 @@ export default function Notes() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
+  // Enhanced save with proper error handling and status
+  const handleSaveNote = async () => {
+    if (!selectedNote) return;
+    
+    if (!editedTitle.trim()) {
+      toast.error("Title is required");
+      return;
+    }
+
+    setIsProcessing(true);
+    setAutoSaveStatus("saving");
+
+    try {
+      const updateData: any = {
+        title: editedTitle,
+        text_note: editedContent,
+        agenda: editedAgenda,
+        attendees: editedAttendees,
+        tags: editedTags,
+        sections: editedSections,
+      };
+
+      // Only update action items if changed
+      if (JSON.stringify(editedActionItems) !== JSON.stringify(selectedNote.ai_action_items || [])) {
+        updateData.ai_action_items = editedActionItems;
+      }
+
+      await updateNote(selectedNote.id, updateData);
+      
+      setHasUnsavedChanges(false);
+      setAutoSaveStatus("saved");
+      lastSaveRef.current = Date.now();
+      
+      toast.success("Note saved successfully");
+      
+      // Clear saved status after 2 seconds
+      setTimeout(() => {
+        if (autoSaveStatus === "saved" && !hasUnsavedChanges) {
+          setAutoSaveStatus("idle");
+        }
+      }, 2000);
+
+    } catch (error) {
+      console.error("Error saving note:", error);
+      setAutoSaveStatus("idle");
+      toast.error("Failed to save note. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Enhanced create note with validation
+  const handleCreateNote = async () => {
+    if (!newNote.title.trim()) {
+      toast.error("Title is required");
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const created = await createNote({
+        ...newNote,
+        // Add timestamp
+        meeting_date: new Date().toISOString(),
+        // Ensure required fields
+        attendees: newNote.attendees || [],
+        tags: newNote.tags || [],
+        ai_action_items: [],
+        status: "draft",
+      });
+
+      if (created?.id) {
+        // Reset form
+        setNewNote({
+          title: "",
+          text_note: "",
+          category: "general",
+          meeting_type: "general",
+          project_id: "",
+          agenda: "",
+          attendees: [],
+          duration: 60,
+          location: "",
+          tags: [],
+          attachments: [],
+          sections: [],
+          template_id: "",
+        });
+
+        setIsCreateDialogOpen(false);
+        toast.success("Note created successfully");
+        
+        // Navigate to the new note
+        navigate(`/notes?note=${created.id}`);
+      }
+    } catch (error) {
+      console.error("Error creating note:", error);
+      toast.error("Failed to create note");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // Apply template to new note
   const applyTemplate = (template: any) => {
     const today = new Date();
@@ -422,6 +529,53 @@ export default function Notes() {
     }
   };
 
+  // Add attendee
+  const handleAddAttendee = () => {
+    if (newAttendee.trim() && !editedAttendees.includes(newAttendee.trim())) {
+      setEditedAttendees([...editedAttendees, newAttendee.trim()]);
+      setHasUnsavedChanges(true);
+      setNewAttendee("");
+    }
+  };
+
+  // Add tag
+  const handleAddTag = () => {
+    if (newTag.trim() && !editedTags.includes(newTag.trim())) {
+      setEditedTags([...editedTags, newTag.trim()]);
+      setHasUnsavedChanges(true);
+      setNewTag("");
+    }
+  };
+
+  // Add action item
+  const handleAddActionItem = () => {
+    if (newActionItem.trim()) {
+      const newItem = {
+        id: `action-${Date.now()}`,
+        text: newActionItem.trim(),
+        completed: false,
+        assignee: "",
+        due_date: "",
+        priority: "medium",
+      };
+      
+      setEditedActionItems([...editedActionItems, newItem]);
+      setHasUnsavedChanges(true);
+      setNewActionItem("");
+      toast.success("Action item added");
+    }
+  };
+
+  // Toggle action item completion
+  const toggleActionItem = (id: string) => {
+    setEditedActionItems(items =>
+      items.map(item =>
+        item.id === id ? { ...item, completed: !item.completed } : item
+      )
+    );
+    setHasUnsavedChanges(true);
+  };
+
   // Enhanced voice recording with playback functionality
   const startRecording = async () => {
     try {
@@ -472,7 +626,7 @@ export default function Notes() {
             if (selectedNote) {
               const saveData = updated.map(rec => ({
                 ...rec,
-                blob: Array.from(new Uint8Array(rec.blob)),
+                blob: Array.from(new Uint8Array(await rec.blob.arrayBuffer())),
                 timestamp: rec.timestamp.toISOString(),
               }));
               localStorage.setItem(`audio_recordings_${selectedNote.id}`, JSON.stringify(saveData));
@@ -560,7 +714,7 @@ export default function Notes() {
         const base64Audio = reader.result as string;
         const base64Data = base64Audio.split(',')[1];
         
-        // Call transcription API
+        // Call transcription API (this is a placeholder - implement your own endpoint)
         const response = await fetch("/api/transcribe", {
           method: "POST",
           headers: {
@@ -753,7 +907,7 @@ export default function Notes() {
                       </>
                     )}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleExtractActionItems}>
+                  <DropdownMenuItem onClick={() => extractActionItems(selectedNote.id, editedContent)}>
                     <Zap className="h-4 w-4 mr-2" />
                     Extract Action Items
                   </DropdownMenuItem>
@@ -878,7 +1032,7 @@ export default function Notes() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={handleExtractActionItems}
+                    onClick={() => extractActionItems(selectedNote.id, editedContent)}
                   >
                     <Sparkles className="h-4 w-4 mr-2" />
                     Auto-extract
@@ -1047,7 +1201,13 @@ export default function Notes() {
                                 <CopyPlus className="h-4 w-4 mr-2" />
                                 Add to Note
                               </DropdownMenuItem>
-                              <DropdownMenuItem className="text-destructive">
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => {
+                                  setAudioRecordings(audioRecordings.filter(r => r.id !== recording.id));
+                                  toast.success("Recording deleted");
+                                }}
+                              >
                                 <Trash className="h-4 w-4 mr-2" />
                                 Delete
                               </DropdownMenuItem>
@@ -1276,7 +1436,7 @@ export default function Notes() {
               onClick={() => setIsTemplateDialogOpen(true)}
               className="gap-2"
             >
-              <Template className="h-4 w-4" />
+              <FileBox className="h-4 w-4" /> {/* Changed from Template to FileBox */}
               Templates
             </Button>
             <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
@@ -1353,7 +1513,7 @@ export default function Notes() {
                   {searchQuery ? "No notes match your search" : "Create your first meeting note"}
                 </p>
                 <Button onClick={() => setIsTemplateDialogOpen(true)} className="gap-2">
-                  <Template className="h-4 w-4" />
+                  <FileBox className="h-4 w-4" /> {/* Changed from Template to FileBox */}
                   Start with Template
                 </Button>
               </Card>
@@ -1533,7 +1693,8 @@ export default function Notes() {
                                   className="h-6 w-6 p-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    // Edit template
+                                    // Edit template functionality would go here
+                                    toast.info("Edit template feature coming soon!");
                                   }}
                                 >
                                   <Edit3 className="h-3 w-3" />
@@ -1546,6 +1707,7 @@ export default function Notes() {
                                     e.stopPropagation();
                                     if (confirm("Delete this template?")) {
                                       deleteTemplate(template.id);
+                                      toast.success("Template deleted");
                                     }
                                   }}
                                 >
@@ -1733,8 +1895,18 @@ export default function Notes() {
                   <Select
                     value={newNote.template_id}
                     onValueChange={(value) => {
-                      const template = allTemplates.find(t => t.id === value);
-                      if (template) applyTemplate(template);
+                      if (value) {
+                        const template = allTemplates.find(t => t.id === value);
+                        if (template) applyTemplate(template);
+                      } else {
+                        // Clear template
+                        setNewNote({
+                          ...newNote,
+                          template_id: "",
+                          sections: [],
+                          text_note: "",
+                        });
+                      }
                     }}
                   >
                     <SelectTrigger>
