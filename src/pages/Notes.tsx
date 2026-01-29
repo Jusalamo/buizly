@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,11 +38,16 @@ import {
   Trash2,
   Sparkles,
   CheckCircle,
+  ArrowLeft,
+  Save,
+  X,
+  ChevronRight,
 } from "lucide-react";
 import { useMeetingNotes } from "@/hooks/useMeetingNotes";
 import { Label } from "@/components/ui/label";
 
 export default function Notes() {
+  const { id: noteId } = useParams();
   const navigate = useNavigate();
   const {
     notes,
@@ -58,6 +63,7 @@ export default function Notes() {
     createCategory,
     searchNotes,
     getPinnedNotes,
+    generateAISummary,
   } = useMeetingNotes();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -70,6 +76,24 @@ export default function Notes() {
     category: "general",
     tags: [] as string[],
   });
+  
+  // For viewing/editing a single note
+  const [selectedNote, setSelectedNote] = useState<any>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState("");
+
+  // If we have a noteId in URL, show that note
+  useEffect(() => {
+    if (noteId && notes.length > 0) {
+      const foundNote = notes.find(n => n.id === noteId);
+      if (foundNote) {
+        setSelectedNote(foundNote);
+        setEditedContent(foundNote.text_note || "");
+      }
+    } else {
+      setSelectedNote(null);
+    }
+  }, [noteId, notes]);
 
   // Filter notes based on search, category, and tab
   const filteredNotes = useMemo(() => {
@@ -119,15 +143,49 @@ export default function Notes() {
     }
   };
 
+  const handleSaveNote = async () => {
+    if (selectedNote) {
+      await updateNote(selectedNote.id, { text_note: editedContent });
+      setIsEditing(false);
+    }
+  };
+
+  const handleGenerateAISummary = async () => {
+    if (selectedNote) {
+      try {
+        await generateAISummary(selectedNote.id);
+      } catch (error) {
+        console.error("Error generating AI summary:", error);
+      }
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return "Today";
+    } else if (diffDays === 1) {
+      return "Yesterday";
+    } else if (diffDays < 7) {
+      return `${diffDays} days ago`;
+    } else {
+      return date.toLocaleDateString();
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
         <div className="max-w-7xl mx-auto p-6">
           <div className="animate-pulse space-y-6">
-            <div className="h-10 w-48 bg-gray-200 rounded" />
+            <div className="h-10 w-48 bg-secondary rounded" />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[1, 2, 3].map(i => (
-                <div key={i} className="h-64 bg-gray-200 rounded" />
+                <div key={i} className="h-64 bg-secondary rounded" />
               ))}
             </div>
           </div>
@@ -136,18 +194,168 @@ export default function Notes() {
     );
   }
 
+  // If we're viewing a single note, show detail view
+  if (selectedNote) {
+    return (
+      <Layout>
+        <div className="max-w-4xl mx-auto p-6 space-y-6">
+          {/* Back button and actions */}
+          <div className="flex items-center justify-between">
+            <Button variant="ghost" onClick={() => navigate("/notes")}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Notes
+            </Button>
+            
+            {isEditing ? (
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setIsEditing(false)}>
+                  <X className="h-4 w-4 mr-2" />
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveNote}>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setIsEditing(true)}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                {!selectedNote.ai_summary && (
+                  <Button variant="outline" onClick={handleGenerateAISummary}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    AI Summary
+                  </Button>
+                )}
+                <Button 
+                  variant="destructive" 
+                  onClick={() => {
+                    if (confirm("Delete this note?")) {
+                      deleteNote(selectedNote.id);
+                      navigate("/notes");
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Note detail */}
+          <Card className="p-6">
+            <h1 className="text-2xl font-bold mb-2">{selectedNote.title}</h1>
+            
+            <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
+              <div className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                <span>{formatDate(selectedNote.created_at)}</span>
+              </div>
+              {selectedNote.category && (
+                <Badge variant="secondary">{selectedNote.category}</Badge>
+              )}
+              {selectedNote.is_pinned && (
+                <Badge variant="outline" className="gap-1">
+                  <Pin className="h-3 w-3" />
+                  Pinned
+                </Badge>
+              )}
+            </div>
+
+            {selectedNote.tags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-6">
+                {selectedNote.tags.map((tag: string, index: number) => (
+                  <Badge key={index} variant="outline">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            {isEditing ? (
+              <Textarea
+                value={editedContent}
+                onChange={(e) => setEditedContent(e.target.value)}
+                rows={15}
+                className="font-mono"
+              />
+            ) : (
+              <div className="whitespace-pre-wrap text-foreground">
+                {selectedNote.text_note || "No content"}
+              </div>
+            )}
+          </Card>
+
+          {/* AI Summary */}
+          {selectedNote.ai_summary && (
+            <Card className="p-6 border-primary/20 bg-primary/5">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-semibold">AI Summary</h2>
+              </div>
+              <p className="text-foreground">{selectedNote.ai_summary}</p>
+            </Card>
+          )}
+
+          {/* Action Items */}
+          {selectedNote.ai_action_items && selectedNote.ai_action_items.length > 0 && (
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Action Items</h2>
+                <Badge variant="outline">
+                  {selectedNote.ai_action_items.filter((item: any) => item.completed).length}/
+                  {selectedNote.ai_action_items.length}
+                </Badge>
+              </div>
+              
+              <div className="space-y-3">
+                {selectedNote.ai_action_items.map((item: any) => (
+                  <div
+                    key={item.id}
+                    className="flex items-start gap-3 p-3 rounded-lg bg-secondary/50"
+                  >
+                    <button
+                      onClick={() => updateActionItem(selectedNote.id, item.id, { completed: !item.completed })}
+                      className="flex-shrink-0 mt-0.5"
+                    >
+                      {item.completed ? (
+                        <CheckCircle className="h-5 w-5 text-green-500" />
+                      ) : (
+                        <div className="h-5 w-5 rounded-full border-2 border-border" />
+                      )}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm ${item.completed ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                        {item.text}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+      </Layout>
+    );
+  }
+
+  // Otherwise show the notes list view
   return (
     <Layout>
       <div className="max-w-7xl mx-auto p-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">Meeting Notes</h1>
-            <p className="text-gray-500">Manage all your meeting notes in one place</p>
+            <h1 className="text-3xl font-bold text-foreground">Meeting Notes</h1>
+            <p className="text-muted-foreground">Capture, organize, and review your meeting notes</p>
           </div>
+          
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700">
+              <Button className="bg-primary text-primary-foreground">
                 <Plus className="h-4 w-4 mr-2" />
                 New Note
               </Button>
@@ -166,6 +374,7 @@ export default function Notes() {
                     onChange={(e) => setNewNote({ ...newNote, title: e.target.value })}
                   />
                 </div>
+                
                 <div className="space-y-2">
                   <Label htmlFor="content">Content</Label>
                   <Textarea
@@ -189,21 +398,22 @@ export default function Notes() {
           </Dialog>
         </div>
 
-        {/* Search and Filters */}
+        {/* Search and Filter */}
         <div className="flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search notes..."
+              placeholder="Search notes by title, content, or tags..."
               className="pl-10"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+          
           <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-gray-400" />
+            <Filter className="h-4 w-4 text-muted-foreground" />
             <select
-              className="border rounded-md px-3 py-2"
+              className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
             >
@@ -219,94 +429,101 @@ export default function Notes() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
+          <TabsList className="grid grid-cols-4">
             <TabsTrigger value="all">All Notes</TabsTrigger>
             <TabsTrigger value="pinned">Pinned</TabsTrigger>
             <TabsTrigger value="bookmarked">Bookmarked</TabsTrigger>
             <TabsTrigger value="actionable">Action Items</TabsTrigger>
           </TabsList>
           
-          <TabsContent value={activeTab} className="space-y-4">
+          <TabsContent value={activeTab} className="space-y-6">
             {filteredNotes.length === 0 ? (
               <Card className="p-8 text-center">
-                <p className="text-gray-500">No notes found</p>
-                <Button 
-                  onClick={() => setIsCreateDialogOpen(true)}
-                  className="mt-4"
-                >
-                  Create Your First Note
+                <div className="mx-auto w-12 h-12 bg-secondary rounded-full flex items-center justify-center mb-4">
+                  <StickyNote className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-2">No notes found</h3>
+                <p className="text-muted-foreground mb-4">
+                  {searchQuery || selectedCategory !== "all" || activeTab !== "all"
+                    ? "Try adjusting your filters"
+                    : "Create your first note to get started"}
+                </p>
+                <Button onClick={() => setIsCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Note
                 </Button>
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredNotes.map((note) => (
-                  <Card key={note.id} className="p-4 hover:shadow-lg transition-shadow">
-                    <div className="space-y-3">
+                  <Card key={note.id} className="group hover:shadow-lg transition-shadow">
+                    <div className="p-5 space-y-4">
                       {/* Note Header */}
                       <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="font-semibold text-lg truncate">
-                            {note.title || "Untitled Note"}
-                          </h3>
-                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-semibold text-foreground truncate">
+                              {note.title || "Untitled Note"}
+                            </h3>
+                            {note.is_pinned && (
+                              <Pin className="h-3 w-3 text-yellow-500 flex-shrink-0" />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <Calendar className="h-3 w-3" />
-                            <span>{new Date(note.created_at).toLocaleDateString()}</span>
+                            <span>{formatDate(note.created_at)}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                          {note.is_pinned && (
-                            <Pin className="h-4 w-4 text-yellow-500" />
-                          )}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                              <DropdownMenuItem onClick={() => togglePinNote(note.id, !note.is_pinned)}>
-                                {note.is_pinned ? (
-                                  <>
-                                    <PinOff className="h-4 w-4 mr-2" />
-                                    Unpin
-                                  </>
-                                ) : (
-                                  <>
-                                    <Pin className="h-4 w-4 mr-2" />
-                                    Pin
-                                  </>
-                                )}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>
-                                <Edit className="h-4 w-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                className="text-red-600"
-                                onClick={() => {
-                                  if (confirm("Delete this note?")) {
-                                    deleteNote(note.id);
-                                  }
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
+                        
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => togglePinNote(note.id, !note.is_pinned)}>
+                              {note.is_pinned ? (
+                                <>
+                                  <PinOff className="h-4 w-4 mr-2" />
+                                  Unpin
+                                </>
+                              ) : (
+                                <>
+                                  <Pin className="h-4 w-4 mr-2" />
+                                  Pin
+                                </>
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => navigate(`/notes?note=${note.id}`)}>
+                              <Edit className="h-4 w-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              className="text-destructive"
+                              onClick={() => {
+                                if (confirm("Are you sure you want to delete this note?")) {
+                                  deleteNote(note.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
 
-                      {/* Content Preview */}
-                      <p className="text-gray-700 line-clamp-3">
+                      {/* Note Preview */}
+                      <div className="text-sm text-foreground line-clamp-3">
                         {note.text_note || note.ai_summary || "No content"}
-                      </p>
+                      </div>
 
                       {/* Tags */}
                       {note.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {note.tags.map((tag, index) => (
-                            <Badge key={index} variant="secondary" className="text-xs">
+                            <Badge key={index} variant="outline" className="text-xs">
                               {tag}
                             </Badge>
                           ))}
@@ -317,8 +534,8 @@ export default function Notes() {
                       {note.ai_action_items && note.ai_action_items.length > 0 && (
                         <div className="space-y-1">
                           <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium">Action Items</span>
-                            <span className="text-gray-500">
+                            <span className="font-medium text-foreground">Action Items</span>
+                            <span className="text-muted-foreground">
                               {note.ai_action_items.filter(item => item.completed).length}/
                               {note.ai_action_items.length}
                             </span>
@@ -331,10 +548,10 @@ export default function Notes() {
                                 {item.completed ? (
                                   <CheckCircle className="h-4 w-4 text-green-500" />
                                 ) : (
-                                  <div className="h-4 w-4 rounded-full border" />
+                                  <div className="h-4 w-4 rounded-full border border-border" />
                                 )}
                               </button>
-                              <span className={item.completed ? "line-through text-gray-500" : ""}>
+                              <span className={item.completed ? "line-through text-muted-foreground" : "text-foreground"}>
                                 {item.text}
                               </span>
                             </div>
@@ -343,12 +560,13 @@ export default function Notes() {
                       )}
 
                       {/* Footer Actions */}
-                      <div className="flex items-center justify-between pt-2 border-t">
+                      <div className="flex items-center justify-between pt-3 border-t">
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="h-8 px-2 text-xs"
                           onClick={() => {
-                            if (note.bookmarks.length > 0) {
+                            if (note.bookmarks?.length > 0) {
                               removeBookmark(note.id, note.bookmarks[0].id);
                             } else {
                               addBookmark(note.id, {
@@ -358,7 +576,7 @@ export default function Notes() {
                             }
                           }}
                         >
-                          {note.bookmarks.length > 0 ? (
+                          {note.bookmarks?.length > 0 ? (
                             <>
                               <Bookmark className="h-4 w-4 mr-1 fill-current" />
                               Bookmarked
@@ -374,9 +592,11 @@ export default function Notes() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => navigate(`/notes/${note.id}`)}
+                          className="h-8"
+                          onClick={() => navigate(`/notes?note=${note.id}`)}
                         >
-                          View Details
+                          View
+                          <ChevronRight className="h-4 w-4 ml-1" />
                         </Button>
                       </div>
                     </div>
@@ -387,44 +607,55 @@ export default function Notes() {
           </TabsContent>
         </Tabs>
 
-        {/* Stats */}
+        {/* Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Total Notes</p>
-                <p className="text-2xl font-bold">{notes.length}</p>
+                <p className="text-sm text-muted-foreground">Total Notes</p>
+                <p className="text-2xl font-bold text-foreground">{notes.length}</p>
               </div>
-              <Folder className="h-8 w-8 text-blue-500" />
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <StickyNote className="h-6 w-6 text-primary" />
+              </div>
             </div>
           </Card>
+          
           <Card className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Pinned</p>
-                <p className="text-2xl font-bold">{getPinnedNotes().length}</p>
+                <p className="text-sm text-muted-foreground">Pinned</p>
+                <p className="text-2xl font-bold text-foreground">{getPinnedNotes().length}</p>
               </div>
-              <Pin className="h-8 w-8 text-yellow-500" />
+              <div className="p-2 bg-yellow-500/10 rounded-lg">
+                <Pin className="h-6 w-6 text-yellow-500" />
+              </div>
             </div>
           </Card>
+          
           <Card className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">With AI</p>
-                <p className="text-2xl font-bold">
+                <p className="text-sm text-muted-foreground">With AI Summary</p>
+                <p className="text-2xl font-bold text-foreground">
                   {notes.filter(n => n.ai_summary).length}
                 </p>
               </div>
-              <Sparkles className="h-8 w-8 text-purple-500" />
+              <div className="p-2 bg-purple-500/10 rounded-lg">
+                <Sparkles className="h-6 w-6 text-purple-500" />
+              </div>
             </div>
           </Card>
+          
           <Card className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Categories</p>
-                <p className="text-2xl font-bold">{categories.length}</p>
+                <p className="text-sm text-muted-foreground">Categories</p>
+                <p className="text-2xl font-bold text-foreground">{categories.length}</p>
               </div>
-              <Tag className="h-8 w-8 text-green-500" />
+              <div className="p-2 bg-green-500/10 rounded-lg">
+                <Folder className="h-6 w-6 text-green-500" />
+              </div>
             </div>
           </Card>
         </div>
