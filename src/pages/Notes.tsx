@@ -42,6 +42,7 @@ import {
   Save,
   X,
   ChevronRight,
+  StickyNote, // ADD THIS IMPORT
 } from "lucide-react";
 import { useMeetingNotes } from "@/hooks/useMeetingNotes";
 import { Label } from "@/components/ui/label";
