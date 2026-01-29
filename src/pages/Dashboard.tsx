@@ -189,9 +189,9 @@ export default function Dashboard() {
 
         {/* Quick Action Buttons - Horizontal on mobile */}
         <div className="flex flex-row gap-3 overflow-x-auto pb-2">
-          {/* Notes Button */}
+          {/* Notes Button - UPDATED to navigate to /notes */}
           <Button 
-            onClick={() => navigate("/capture")}
+            onClick={() => navigate("/notes")}  {/* CHANGED FROM "/capture" to "/notes" */}
             className="flex-1 min-w-0 h-auto py-4 px-4 bg-card hover:bg-card/80 border border-border text-foreground flex flex-col items-center gap-2"
             variant="outline"
           >
