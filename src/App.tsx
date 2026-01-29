@@ -28,7 +28,7 @@ import Analytics from "./pages/Analytics";
 import Subscription from "./pages/Subscription";
 import Discover from "./pages/Discover";
 import Calendar from "./pages/Calendar";
-import Notes from "./pages/Notes"; // ADD THIS LINE ONLY
+import Notes from "./pages/Notes";
 import NotFound from "./pages/NotFound";
 
 // Initialize cache immediately on app load
@@ -60,7 +60,7 @@ function AppRoutes() {
       <Route path="/oauth2callback" element={<OAuth2Callback />} />
       <Route path="/analytics" element={<Analytics />} />
       <Route path="/subscription" element={<Subscription />} />
-      <Route path="/notes" element={<Notes />} /> {/* ADD THIS ROUTE */}
+      <Route path="/notes" element={<Notes />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
