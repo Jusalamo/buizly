@@ -188,18 +188,6 @@ interface AudioRecording {
   transcription?: string;
 }
 
-// Helper function to convert blob to array
-const blobToArray = async (blob: Blob): Promise<number[]> => {
-  const arrayBuffer = await blob.arrayBuffer();
-  return Array.from(new Uint8Array(arrayBuffer));
-};
-
-// Helper function to convert array to blob
-const arrayToBlob = (array: number[]): Blob => {
-  const uint8Array = new Uint8Array(array);
-  return new Blob([uint8Array], { type: 'audio/webm' });
-};
-
 export default function Notes() {
   const [searchParams] = useSearchParams();
   const noteIdFromQuery = searchParams.get("note");
@@ -304,7 +292,7 @@ export default function Notes() {
     return [...DEFAULT_TEMPLATES, ...(templates || [])];
   }, [templates]);
 
-  // If we have a noteId in URL, show that note
+  // Load note from URL
   useEffect(() => {
     if (noteIdFromQuery && notes.length > 0) {
       const foundNote = notes.find(n => n.id === noteIdFromQuery);
@@ -318,27 +306,8 @@ export default function Notes() {
         setEditedActionItems(foundNote.ai_action_items || []);
         setEditedSections(foundNote.sections || []);
         
-        // Load audio recordings for this note
-        const loadRecordings = async () => {
-          const noteRecordings = localStorage.getItem(`audio_recordings_${foundNote.id}`);
-          if (noteRecordings) {
-            try {
-              const parsed = JSON.parse(noteRecordings);
-              const loadedRecordings = await Promise.all(
-                parsed.map(async (rec: any) => ({
-                  ...rec,
-                  timestamp: new Date(rec.timestamp),
-                  blob: arrayToBlob(rec.blob),
-                }))
-              );
-              setAudioRecordings(loadedRecordings);
-            } catch (error) {
-              console.error("Error loading audio recordings:", error);
-            }
-          }
-        };
-        
-        loadRecordings();
+        // Load audio recordings
+        loadAudioRecordings(foundNote.id);
         setHasUnsavedChanges(false);
         setAutoSaveStatus("saved");
       }
@@ -350,7 +319,63 @@ export default function Notes() {
     }
   }, [noteIdFromQuery, notes]);
 
-  // Auto-save functionality with status tracking
+  // Load audio recordings from localStorage
+  const loadAudioRecordings = async (noteId: string) => {
+    try {
+      const stored = localStorage.getItem(`audio_recordings_${noteId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const loadedRecordings = await Promise.all(
+          parsed.map(async (rec: any) => {
+            const uint8Array = new Uint8Array(rec.blobData);
+            const blob = new Blob([uint8Array], { type: 'audio/webm' });
+            const url = URL.createObjectURL(blob);
+            
+            return {
+              id: rec.id,
+              blob,
+              url,
+              duration: rec.duration,
+              timestamp: new Date(rec.timestamp),
+              transcribed: rec.transcribed || false,
+              transcription: rec.transcription || "",
+            };
+          })
+        );
+        setAudioRecordings(loadedRecordings);
+      }
+    } catch (error) {
+      console.error("Error loading audio recordings:", error);
+      toast.error("Failed to load audio recordings");
+    }
+  };
+
+  // Save audio recordings to localStorage
+  const saveAudioRecordings = async (noteId: string, recordings: AudioRecording[]) => {
+    try {
+      const saveData = await Promise.all(
+        recordings.map(async (rec) => {
+          const arrayBuffer = await rec.blob.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          
+          return {
+            id: rec.id,
+            blobData: Array.from(uint8Array),
+            duration: rec.duration,
+            timestamp: rec.timestamp.toISOString(),
+            transcribed: rec.transcribed,
+            transcription: rec.transcription,
+          };
+        })
+      );
+      
+      localStorage.setItem(`audio_recordings_${noteId}`, JSON.stringify(saveData));
+    } catch (error) {
+      console.error("Error saving audio recordings:", error);
+    }
+  };
+
+  // Auto-save functionality
   useEffect(() => {
     if (hasUnsavedChanges && selectedNote) {
       if (autoSaveTimerRef.current) {
@@ -359,7 +384,7 @@ export default function Notes() {
       
       autoSaveTimerRef.current = setTimeout(async () => {
         await handleSaveNote();
-      }, 1500);
+      }, 2000); // Auto-save after 2 seconds of inactivity
     }
 
     return () => {
@@ -367,9 +392,9 @@ export default function Notes() {
         clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [hasUnsavedChanges, editedTitle, editedContent, editedAgenda, editedAttendees, editedTags, editedSections]);
+  }, [hasUnsavedChanges, editedTitle, editedContent, editedAgenda, editedAttendees, editedTags, editedSections, editedActionItems]);
 
-  // Handle beforeunload to warn about unsaved changes
+  // Warn about unsaved changes
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (hasUnsavedChanges) {
@@ -382,7 +407,7 @@ export default function Notes() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
-  // Enhanced save with proper error handling and status
+  // Save note with proper error handling
   const handleSaveNote = async () => {
     if (!selectedNote) return;
     
@@ -396,19 +421,22 @@ export default function Notes() {
 
     try {
       const updateData: any = {
-        title: editedTitle,
+        title: editedTitle.trim(),
         text_note: editedContent,
         agenda: editedAgenda,
         attendees: editedAttendees,
         tags: editedTags,
         sections: editedSections,
+        ai_action_items: editedActionItems,
+        updated_at: new Date().toISOString(),
       };
 
-      if (JSON.stringify(editedActionItems) !== JSON.stringify(selectedNote.ai_action_items || [])) {
-        updateData.ai_action_items = editedActionItems;
-      }
-
       await updateNote(selectedNote.id, updateData);
+      
+      // Also save audio recordings
+      if (audioRecordings.length > 0) {
+        await saveAudioRecordings(selectedNote.id, audioRecordings);
+      }
       
       setHasUnsavedChanges(false);
       setAutoSaveStatus("saved");
@@ -416,6 +444,7 @@ export default function Notes() {
       
       toast.success("Note saved successfully");
       
+      // Reset status after 2 seconds
       setTimeout(() => {
         if (autoSaveStatus === "saved" && !hasUnsavedChanges) {
           setAutoSaveStatus("idle");
@@ -431,7 +460,7 @@ export default function Notes() {
     }
   };
 
-  // Enhanced create note with validation
+  // Create new note with validation
   const handleCreateNote = async () => {
     if (!newNote.title.trim()) {
       toast.error("Title is required");
@@ -441,16 +470,42 @@ export default function Notes() {
     setIsProcessing(true);
 
     try {
-      const created = await createNote({
-        ...newNote,
+      // Compile content from sections if they exist
+      let finalContent = newNote.text_note;
+      if (newNote.sections.length > 0) {
+        finalContent = newNote.sections
+          .map(section => `## ${section.title}\n\n${section.content || section.placeholder || ''}`)
+          .join('\n\n');
+      }
+
+      const noteData = {
+        title: newNote.title.trim(),
+        text_note: finalContent,
+        category: newNote.category,
+        meeting_type: newNote.meeting_type,
+        project_id: newNote.project_id || null,
+        agenda: newNote.agenda,
+        attendees: newNote.attendees,
+        duration: newNote.duration,
+        location: newNote.location,
+        tags: newNote.tags,
+        attachments: [],
+        sections: newNote.sections,
+        template_id: newNote.template_id,
         meeting_date: new Date().toISOString(),
-        attendees: newNote.attendees || [],
-        tags: newNote.tags || [],
         ai_action_items: [],
         status: "draft",
-      });
+        is_pinned: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const created = await createNote(noteData);
 
       if (created?.id) {
+        toast.success("Note created successfully");
+        
+        // Reset form
         setNewNote({
           title: "",
           text_note: "",
@@ -468,13 +523,13 @@ export default function Notes() {
         });
 
         setIsCreateDialogOpen(false);
-        toast.success("Note created successfully");
         
+        // Navigate to the new note
         navigate(`/notes?note=${created.id}`);
       }
     } catch (error) {
       console.error("Error creating note:", error);
-      toast.error("Failed to create note");
+      toast.error("Failed to create note. Please try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -486,20 +541,15 @@ export default function Notes() {
     const dateStr = today.toLocaleDateString();
     
     setNewNote({
+      ...newNote,
       title: `${template.name} - ${dateStr}`,
-      text_note: template.sections.map((section: any) => `## ${section.title}\n\n${section.placeholder || ''}`).join('\n\n'),
-      category: "meeting",
       meeting_type: template.id,
-      project_id: "",
-      agenda: "",
-      attendees: [],
       duration: template.defaultDuration || 60,
-      location: "",
-      tags: [...template.tags, "template"],
-      attachments: [],
+      tags: [...template.tags],
       sections: template.sections.map((section: any) => ({
         title: section.title,
-        content: section.placeholder || "",
+        content: "",
+        placeholder: section.placeholder,
       })),
       template_id: template.id,
     });
@@ -521,10 +571,30 @@ export default function Notes() {
       return;
     }
 
+    setIsProcessing(true);
+
     try {
-      await createTemplate(customTemplate);
+      const templateData = {
+        id: `custom-${Date.now()}`,
+        name: customTemplate.name.trim(),
+        description: customTemplate.description.trim(),
+        icon: customTemplate.icon,
+        color: customTemplate.color,
+        sections: customTemplate.sections.map(s => ({
+          title: s.title.trim(),
+          content: "",
+          placeholder: s.placeholder || `Add content for ${s.title.toLowerCase()}...`,
+        })),
+        tags: customTemplate.tags,
+        defaultDuration: customTemplate.defaultDuration,
+        created_at: new Date().toISOString(),
+      };
+
+      await createTemplate(templateData);
+      
       toast.success("Template created successfully");
-      setIsCreateTemplateDialogOpen(false);
+      
+      // Reset form
       setCustomTemplate({
         name: "",
         description: "",
@@ -534,9 +604,13 @@ export default function Notes() {
         tags: [],
         defaultDuration: 60,
       });
+      
+      setIsCreateTemplateDialogOpen(false);
     } catch (error) {
       console.error("Error creating template:", error);
-      toast.error("Failed to create template");
+      toast.error("Failed to create template. Please try again.");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -555,6 +629,7 @@ export default function Notes() {
         ]
       }));
       setNewSectionTitle("");
+      toast.success("Section added");
     }
   };
 
@@ -564,6 +639,7 @@ export default function Notes() {
       setEditedAttendees([...editedAttendees, newAttendee.trim()]);
       setHasUnsavedChanges(true);
       setNewAttendee("");
+      toast.success("Attendee added");
     }
   };
 
@@ -573,6 +649,7 @@ export default function Notes() {
       setEditedTags([...editedTags, newTag.trim()]);
       setHasUnsavedChanges(true);
       setNewTag("");
+      toast.success("Tag added");
     }
   };
 
@@ -605,19 +682,25 @@ export default function Notes() {
     setHasUnsavedChanges(true);
   };
 
-  // Enhanced voice recording with playback functionality
+  // Start voice recording
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          sampleRate: 44100,
+          autoGainControl: true,
+          sampleRate: 48000,
         }
       });
       
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+      
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus',
+        mimeType,
+        audioBitsPerSecond: 128000,
       });
       
       mediaRecorderRef.current = mediaRecorder;
@@ -630,51 +713,41 @@ export default function Notes() {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { 
-          type: 'audio/webm'
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        // Get duration
+        const audio = new Audio(audioUrl);
+        await new Promise((resolve) => {
+          audio.onloadedmetadata = resolve;
         });
         
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
+        const duration = audio.duration;
         
-        audio.onloadedmetadata = async () => {
-          const duration = audio.duration;
-          
-          const newRecording: AudioRecording = {
-            id: `rec_${Date.now()}`,
-            blob: audioBlob,
-            url: audioUrl,
-            duration,
-            timestamp: new Date(),
-            transcribed: false,
-          };
-
-          const updatedRecordings = [newRecording, ...audioRecordings];
-          setAudioRecordings(updatedRecordings);
-          
-          // Save to localStorage
-          if (selectedNote) {
-            try {
-              const saveData = await Promise.all(
-                updatedRecordings.map(async (rec) => ({
-                  ...rec,
-                  blob: await blobToArray(rec.blob),
-                  timestamp: rec.timestamp.toISOString(),
-                }))
-              );
-              localStorage.setItem(`audio_recordings_${selectedNote.id}`, JSON.stringify(saveData));
-            } catch (error) {
-              console.error("Error saving recordings:", error);
-            }
-          }
-
-          toast.success("Recording saved");
+        const newRecording: AudioRecording = {
+          id: `rec_${Date.now()}`,
+          blob: audioBlob,
+          url: audioUrl,
+          duration,
+          timestamp: new Date(),
+          transcribed: false,
         };
 
+        const updatedRecordings = [newRecording, ...audioRecordings];
+        setAudioRecordings(updatedRecordings);
+        
+        // Save to localStorage if we have a selected note
+        if (selectedNote) {
+          await saveAudioRecordings(selectedNote.id, updatedRecordings);
+        }
+
+        toast.success("Recording saved successfully");
+        
+        // Stop all tracks
         stream.getTracks().forEach(track => track.stop());
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(1000); // Collect data every second
       setIsRecording(true);
       setRecordingTime(0);
 
@@ -682,13 +755,14 @@ export default function Notes() {
         setRecordingTime(prev => prev + 1);
       }, 1000);
 
-      toast.info("Recording started...");
+      toast.info("Recording started");
     } catch (error) {
       console.error("Error starting recording:", error);
-      toast.error("Microphone access denied. Please check permissions.");
+      toast.error("Could not access microphone. Please check permissions.");
     }
   };
 
+  // Stop voice recording
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
@@ -702,16 +776,14 @@ export default function Notes() {
     }
   };
 
-  // Audio playback functionality
+  // Play/pause audio
   const playAudio = (recordingId: string) => {
     if (currentPlayingAudio === recordingId) {
-      // Pause if already playing
       if (audioRef.current) {
         audioRef.current.pause();
         setCurrentPlayingAudio(null);
       }
     } else {
-      // Stop current playback and start new one
       if (audioRef.current) {
         audioRef.current.pause();
       }
@@ -733,6 +805,7 @@ export default function Notes() {
     }
   };
 
+  // Transcribe recording using Web Speech API or send to backend
   const transcribeRecording = async (recordingId: string) => {
     const recording = audioRecordings.find(r => r.id === recordingId);
     if (!recording) return;
@@ -740,46 +813,63 @@ export default function Notes() {
     setIsTranscribing(true);
     
     try {
+      // Convert blob to base64 for sending to API
+      const arrayBuffer = await recording.blob.arrayBuffer();
+      const base64Audio = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+
+      // Send to your backend API for transcription
+      // This is a placeholder - you'll need to implement your actual transcription API
       const response = await fetch("/api/transcribe", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          audio: base64Audio,
           noteId: selectedNote?.id,
           recordingId,
         }),
       });
 
-      if (!response.ok) throw new Error("Transcription failed");
+      if (!response.ok) {
+        throw new Error("Transcription failed");
+      }
 
       const { transcription } = await response.json();
       
-      setAudioRecordings(prev =>
-        prev.map(rec =>
-          rec.id === recordingId
-            ? { ...rec, transcribed: true, transcription }
-            : rec
-        )
+      // Update recording with transcription
+      const updatedRecordings = audioRecordings.map(rec =>
+        rec.id === recordingId
+          ? { ...rec, transcribed: true, transcription }
+          : rec
       );
+      
+      setAudioRecordings(updatedRecordings);
 
+      // Save updated recordings
+      if (selectedNote) {
+        await saveAudioRecordings(selectedNote.id, updatedRecordings);
+      }
+
+      // Add transcription to note content
       if (selectedNote && transcription) {
         const timestamp = recording.timestamp.toLocaleTimeString([], { 
           hour: '2-digit', 
           minute: '2-digit' 
         });
-        const newContent = editedContent 
-          ? `${editedContent}\n\n---\n**Recording (${timestamp}):**\n${transcription}`
-          : `**Recording (${timestamp}):**\n${transcription}`;
         
-        setEditedContent(newContent);
+        const transcriptionBlock = `\n\n---\n**Voice Note (${timestamp}):**\n${transcription}\n`;
+        
+        setEditedContent(prev => prev + transcriptionBlock);
         setHasUnsavedChanges(true);
       }
 
-      toast.success("Transcription completed");
+      toast.success("Transcription completed and added to note");
     } catch (error) {
       console.error("Error transcribing audio:", error);
-      toast.error("Failed to transcribe audio");
+      toast.error("Transcription failed. Please try again.");
     } finally {
       setIsTranscribing(false);
     }
@@ -792,7 +882,7 @@ export default function Notes() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Filter notes based on search, category, and tab
+  // Filter notes
   const filteredNotes = useMemo(() => {
     let filtered = notes;
     
@@ -818,7 +908,7 @@ export default function Notes() {
       case "actionable":
         filtered = filtered.filter(note => 
           note.ai_action_items && 
-          note.ai_action_items.some(item => !item.completed)
+          note.ai_action_items.some((item: any) => !item.completed)
         );
         break;
       case "recent":
@@ -831,7 +921,8 @@ export default function Notes() {
     return filtered.sort((a, b) => {
       if (a.is_pinned && !b.is_pinned) return -1;
       if (!a.is_pinned && b.is_pinned) return 1;
-      return new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime();
+      return new Date(b.updated_at || b.created_at).getTime() - 
+             new Date(a.updated_at || a.created_at).getTime();
     });
   }, [notes, searchQuery, selectedCategory, selectedProject, activeTab, searchNotes, getPinnedNotes]);
 
@@ -859,10 +950,13 @@ export default function Notes() {
                 onClick={() => {
                   if (hasUnsavedChanges) {
                     if (confirm("You have unsaved changes. Save before leaving?")) {
-                      handleSaveNote();
+                      handleSaveNote().then(() => navigate("/notes"));
+                    } else {
+                      navigate("/notes");
                     }
+                  } else {
+                    navigate("/notes");
                   }
-                  navigate("/notes");
                 }}
                 className="hover:bg-accent"
               >
@@ -936,25 +1030,6 @@ export default function Notes() {
                     <Sparkles className="h-4 w-4 mr-2" />
                     AI Summary
                   </DropdownMenuItem>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="w-full">
-                      <div className="flex items-center">
-                        <Download className="h-4 w-4 mr-2" />
-                        Export
-                      </div>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => exportNote(selectedNote.id, 'pdf')}>
-                        PDF
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => exportNote(selectedNote.id, 'docx')}>
-                        Word
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => exportNote(selectedNote.id, 'markdown')}>
-                        Markdown
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
                   <Separator />
                   <DropdownMenuItem 
                     className="text-destructive"
@@ -1178,7 +1253,7 @@ export default function Notes() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          {!recording.transcribed && (
+                          {!recording.transcribed ? (
                             <Button
                               variant="outline"
                               size="sm"
@@ -1188,18 +1263,18 @@ export default function Notes() {
                               {isTranscribing ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
-                                <Sparkles className="h-4 w-4" />
+                                <>
+                                  <Sparkles className="h-4 w-4 mr-1" />
+                                  <span className="hidden sm:inline">Transcribe</span>
+                                </>
                               )}
                             </Button>
+                          ) : (
+                            <Badge variant="outline" className="bg-green-50 text-green-700">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Transcribed
+                            </Badge>
                           )}
-                          
-                          <Slider
-                            value={[audioVolume * 100]}
-                            onValueChange={([value]) => setAudioVolume(value / 100)}
-                            max={100}
-                            step={1}
-                            className="w-24"
-                          />
                           
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -1208,31 +1283,26 @@ export default function Notes() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => {
-                                if (recording.transcription) {
+                              {recording.transcription && (
+                                <DropdownMenuItem onClick={() => {
                                   const newContent = editedContent 
                                     ? `${editedContent}\n\n${recording.transcription}`
                                     : recording.transcription;
                                   setEditedContent(newContent);
                                   setHasUnsavedChanges(true);
                                   toast.success("Transcription added to note");
-                                }
-                              }}>
-                                <CopyPlus className="h-4 w-4 mr-2" />
-                                Add to Note
-                              </DropdownMenuItem>
+                                }}>
+                                  <CopyPlus className="h-4 w-4 mr-2" />
+                                  Add to Note
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem 
                                 className="text-destructive"
                                 onClick={() => {
                                   const updated = audioRecordings.filter(r => r.id !== recording.id);
                                   setAudioRecordings(updated);
                                   if (selectedNote) {
-                                    const saveData = updated.map(rec => ({
-                                      ...rec,
-                                      blob: Array.from(new Uint8Array()),
-                                      timestamp: rec.timestamp.toISOString(),
-                                    }));
-                                    localStorage.setItem(`audio_recordings_${selectedNote.id}`, JSON.stringify(saveData));
+                                    saveAudioRecordings(selectedNote.id, updated);
                                   }
                                   toast.success("Recording deleted");
                                 }}
@@ -1466,11 +1536,11 @@ export default function Notes() {
               className="gap-2"
             >
               <FileBox className="h-4 w-4" />
-              Templates
+              <span className="hidden sm:inline">Templates</span>
             </Button>
             <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
               <Plus className="h-4 w-4" />
-              New Note
+              <span className="hidden sm:inline">New Note</span>
             </Button>
           </div>
         </div>
@@ -1605,7 +1675,7 @@ export default function Notes() {
                       {/* Tags */}
                       {note.tags && note.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1">
-                          {note.tags.slice(0, 3).map((tag, index) => (
+                          {note.tags.slice(0, 3).map((tag: string, index: number) => (
                             <Badge key={index} variant="outline" className="text-xs">
                               {tag}
                             </Badge>
@@ -1624,14 +1694,14 @@ export default function Notes() {
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-xs font-medium">Action Items</span>
                             <Badge variant="outline" className="text-xs">
-                              {note.ai_action_items.filter(item => !item.completed).length}/{note.ai_action_items.length}
+                              {note.ai_action_items.filter((item: any) => !item.completed).length}/{note.ai_action_items.length}
                             </Badge>
                           </div>
                           <div className="space-y-1">
                             {note.ai_action_items
-                              .filter(item => !item.completed)
+                              .filter((item: any) => !item.completed)
                               .slice(0, 2)
-                              .map(item => (
+                              .map((item: any) => (
                                 <div key={item.id} className="flex items-center gap-2">
                                   <div className="h-2 w-2 rounded-full bg-yellow-500" />
                                   <span className="text-xs truncate">{item.text}</span>
@@ -1657,7 +1727,10 @@ export default function Notes() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setIsCreateTemplateDialogOpen(true)}
+                  onClick={() => {
+                    setIsTemplateDialogOpen(false);
+                    setIsCreateTemplateDialogOpen(true);
+                  }}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   Create Template
@@ -1704,7 +1777,7 @@ export default function Notes() {
                 <>
                   <h3 className="font-medium mb-3 mt-6">Your Templates</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {templates.map((template) => (
+                    {templates.map((template: any) => (
                       <Card
                         key={template.id}
                         className="p-4 hover:border-primary cursor-pointer transition-colors hover:shadow-sm group"
@@ -1716,17 +1789,6 @@ export default function Notes() {
                             <div className="flex items-center justify-between">
                               <h4 className="font-medium">{template.name}</h4>
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toast.info("Edit template feature coming soon!");
-                                  }}
-                                >
-                                  <Edit3 className="h-3 w-3" />
-                                </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1764,17 +1826,13 @@ export default function Notes() {
               <Button variant="outline" onClick={() => setIsTemplateDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={() => setIsCreateTemplateDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                New Custom Template
-              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
         {/* Create Custom Template Dialog */}
         <Dialog open={isCreateTemplateDialogOpen} onOpenChange={setIsCreateTemplateDialogOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create Custom Template</DialogTitle>
               <DialogDescription>
@@ -1828,14 +1886,6 @@ export default function Notes() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label>Sections</Label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={addTemplateSection}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Section
-                  </Button>
                 </div>
                 
                 <div className="flex gap-2">
@@ -1845,7 +1895,7 @@ export default function Notes() {
                     placeholder="New section title"
                     onKeyPress={(e) => e.key === 'Enter' && addTemplateSection()}
                   />
-                  <Button onClick={addTemplateSection}>Add</Button>
+                  <Button onClick={addTemplateSection} type="button">Add</Button>
                 </div>
 
                 <div className="space-y-2 max-h-60 overflow-y-auto p-2 border rounded-lg">
@@ -1876,6 +1926,7 @@ export default function Notes() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        type="button"
                         onClick={() => {
                           const newSections = customTemplate.sections.filter((_, i) => i !== index);
                           setCustomTemplate({...customTemplate, sections: newSections});
@@ -1893,7 +1944,10 @@ export default function Notes() {
               <Button variant="outline" onClick={() => setIsCreateTemplateDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleCreateTemplate}>
+              <Button onClick={handleCreateTemplate} disabled={isProcessing}>
+                {isProcessing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : null}
                 Create Template
               </Button>
             </DialogFooter>
@@ -1902,11 +1956,11 @@ export default function Notes() {
 
         {/* Create Note Dialog */}
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Meeting Note</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
+            <div className="space-y-4 py-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="title">Meeting Title *</Label>
@@ -1964,7 +2018,7 @@ export default function Notes() {
                           newSections[index].content = e.target.value;
                           setNewNote({ ...newNote, sections: newSections });
                         }}
-                        placeholder={section.content || "Start typing..."}
+                        placeholder={section.placeholder || "Start typing..."}
                         rows={4}
                       />
                     </div>
@@ -1982,34 +2036,6 @@ export default function Notes() {
                   />
                 </div>
               )}
-
-              {/* Voice recording for new note */}
-              <div className="flex justify-center">
-                {isRecording ? (
-                  <Button
-                    variant="destructive"
-                    onClick={stopRecording}
-                    className="w-full"
-                  >
-                    <StopCircle className="h-4 w-4 mr-2" />
-                    Stop Recording ({formatRecordingTime(recordingTime)})
-                  </Button>
-                ) : isTranscribing ? (
-                  <Button disabled className="w-full">
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Transcribing...
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    onClick={startRecording}
-                    className="w-full"
-                  >
-                    <Mic className="h-4 w-4 mr-2" />
-                    Record Voice Note
-                  </Button>
-                )}
-              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
