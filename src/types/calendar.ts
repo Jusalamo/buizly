@@ -114,6 +114,29 @@ export interface MeetingNote {
   is_standalone: boolean;
   created_at: string;
   updated_at: string;
+  // Extended properties for meeting notes UI
+  agenda?: string;
+  attendees?: string[];
+  sections?: NoteSection[];
+  duration?: number;
+}
+
+export interface NoteSection {
+  title: string;
+  content: string;
+  placeholder?: string;
+}
+
+export interface NoteTemplate {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  sections: NoteSection[];
+  tags: string[];
+  defaultDuration: number;
+  created_at?: string;
 }
 
 export interface ActionItem {

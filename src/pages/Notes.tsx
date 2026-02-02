@@ -474,7 +474,7 @@ export default function Notes() {
       let finalContent = newNote.text_note;
       if (newNote.sections.length > 0) {
         finalContent = newNote.sections
-          .map(section => `## ${section.title}\n\n${section.content || section.placeholder || ''}`)
+          .map(section => `## ${section.title}\n\n${section.content || ''}`)
           .join('\n\n');
       }
 
@@ -895,7 +895,7 @@ export default function Notes() {
     }
     
     if (selectedProject !== "all") {
-      filtered = filtered.filter(note => note.project_id === selectedProject);
+      filtered = filtered.filter(note => note.linked_project === selectedProject);
     }
     
     switch (activeTab) {
@@ -1022,7 +1022,7 @@ export default function Notes() {
                       </>
                     )}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => extractActionItems(selectedNote.id, editedContent)}>
+                  <DropdownMenuItem onClick={() => extractActionItems(selectedNote.id)}>
                     <Zap className="h-4 w-4 mr-2" />
                     Extract Action Items
                   </DropdownMenuItem>
@@ -1128,7 +1128,7 @@ export default function Notes() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => extractActionItems(selectedNote.id, editedContent)}
+                    onClick={() => extractActionItems(selectedNote.id)}
                   >
                     <Sparkles className="h-4 w-4 mr-2" />
                     Auto-extract
@@ -1564,7 +1564,7 @@ export default function Notes() {
             <SelectContent>
               <SelectItem value="all">All Categories</SelectItem>
               {categories.map(category => (
-                <SelectItem key={category} value={category}>{category}</SelectItem>
+                <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -1637,7 +1637,7 @@ export default function Notes() {
                           </div>
                           
                           <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                            {note.agenda || "No agenda set"}
+                            {note.ai_summary || note.text_note?.substring(0, 100) || "No content"}
                           </p>
                         </div>
                         
@@ -2018,7 +2018,7 @@ export default function Notes() {
                           newSections[index].content = e.target.value;
                           setNewNote({ ...newNote, sections: newSections });
                         }}
-                        placeholder={section.placeholder || "Start typing..."}
+                        placeholder="Start typing..."
                         rows={4}
                       />
                     </div>
