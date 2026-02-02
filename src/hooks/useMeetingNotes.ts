@@ -1,12 +1,38 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import type { MeetingNote, ActionItem, NotesCategory, Bookmark } from '@/types/calendar';
+import type { MeetingNote, ActionItem, NotesCategory, Bookmark, NoteTemplate, NoteSection } from '@/types/calendar';
+
+// Local storage key for templates
+const TEMPLATES_STORAGE_KEY = 'meeting_notes_templates';
 
 export function useMeetingNotes() {
   const [notes, setNotes] = useState<MeetingNote[]>([]);
   const [categories, setCategories] = useState<NotesCategory[]>([]);
+  const [templates, setTemplates] = useState<NoteTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Load templates from localStorage
+  const loadTemplates = useCallback(() => {
+    try {
+      const stored = localStorage.getItem(TEMPLATES_STORAGE_KEY);
+      if (stored) {
+        setTemplates(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error('Error loading templates:', error);
+    }
+  }, []);
+
+  // Save templates to localStorage
+  const saveTemplates = useCallback((newTemplates: NoteTemplate[]) => {
+    try {
+      localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(newTemplates));
+      setTemplates(newTemplates);
+    } catch (error) {
+      console.error('Error saving templates:', error);
+    }
+  }, []);
 
   const fetchNotes = useCallback(async () => {
     try {
@@ -33,6 +59,11 @@ export function useMeetingNotes() {
         category: n.category || 'general',
         is_pinned: n.is_pinned || false,
         is_standalone: n.is_standalone || false,
+        // Extended properties - store in text_note as JSON if needed
+        agenda: undefined,
+        attendees: [],
+        sections: [],
+        duration: undefined,
       }));
 
       setNotes(typedNotes);
@@ -70,7 +101,7 @@ export function useMeetingNotes() {
         .from('meeting_notes')
         .insert({
           user_id: user.id,
-          meeting_id: noteData.meeting_id,
+          meeting_id: noteData.meeting_id || crypto.randomUUID(),
           title: noteData.title || 'Untitled Note',
           text_note: noteData.text_note,
           category: noteData.category || 'general',
@@ -106,6 +137,13 @@ export function useMeetingNotes() {
         ...updates,
         updated_at: new Date().toISOString(),
       };
+      
+      // Remove extended properties not in DB
+      delete dbUpdates.agenda;
+      delete dbUpdates.attendees;
+      delete dbUpdates.sections;
+      delete dbUpdates.duration;
+      
       if (updates.ai_action_items) {
         dbUpdates.ai_action_items = updates.ai_action_items as unknown as Record<string, unknown>[];
       }
@@ -262,10 +300,196 @@ export function useMeetingNotes() {
     }
   }, [notes, updateNote]);
 
+  // Extract action items using AI
+  const extractActionItems = useCallback(async (noteId: string) => {
+    try {
+      const note = notes.find(n => n.id === noteId);
+      if (!note || !note.text_note && !note.transcript) {
+        throw new Error('No content to extract from');
+      }
+
+      const { data, error } = await supabase.functions.invoke('generate-note-summary', {
+        body: {
+          noteId,
+          content: note.transcript || note.text_note,
+          extractOnly: 'actionItems',
+        }
+      });
+
+      if (error) throw error;
+
+      await updateNote(noteId, {
+        ai_action_items: data.actionItems || [],
+      });
+
+      return data.actionItems;
+    } catch (error) {
+      console.error('Error extracting action items:', error);
+      throw error;
+    }
+  }, [notes, updateNote]);
+
+  // Sync note with calendar event
+  const syncWithCalendar = useCallback(async (noteId: string, eventId: string) => {
+    try {
+      // Update the note with the event ID
+      const { error: noteError } = await supabase
+        .from('meeting_notes')
+        .update({ meeting_id: eventId })
+        .eq('id', noteId);
+
+      if (noteError) throw noteError;
+
+      // Update the calendar event to link to this note
+      const { error: eventError } = await supabase
+        .from('calendar_events')
+        .update({ has_notes: true, meeting_notes_id: noteId })
+        .eq('id', eventId);
+
+      if (eventError) throw eventError;
+
+      await fetchNotes();
+      return true;
+    } catch (error) {
+      console.error('Error syncing with calendar:', error);
+      throw error;
+    }
+  }, [fetchNotes]);
+
+  // Export note to various formats
+  const exportNote = useCallback(async (noteId: string, format: 'text' | 'pdf' | 'docx' = 'text') => {
+    try {
+      const note = notes.find(n => n.id === noteId);
+      if (!note) throw new Error('Note not found');
+
+      // Build export content
+      let content = `# ${note.title || 'Untitled Note'}\n\n`;
+      content += `Date: ${new Date(note.created_at).toLocaleDateString()}\n`;
+      content += `Category: ${note.category}\n\n`;
+
+      if (note.ai_summary) {
+        content += `## Summary\n${note.ai_summary}\n\n`;
+      }
+
+      if (note.text_note) {
+        content += `## Notes\n${note.text_note}\n\n`;
+      }
+
+      if (note.ai_action_items && note.ai_action_items.length > 0) {
+        content += `## Action Items\n`;
+        note.ai_action_items.forEach((item, index) => {
+          content += `${index + 1}. [${item.completed ? 'x' : ' '}] ${item.text}`;
+          if (item.assignee) content += ` (${item.assignee})`;
+          if (item.deadline) content += ` - Due: ${item.deadline}`;
+          content += '\n';
+        });
+        content += '\n';
+      }
+
+      if (note.ai_decisions && note.ai_decisions.length > 0) {
+        content += `## Decisions\n`;
+        note.ai_decisions.forEach((decision, index) => {
+          content += `${index + 1}. ${decision}\n`;
+        });
+        content += '\n';
+      }
+
+      if (note.transcript) {
+        content += `## Transcript\n${note.transcript}\n\n`;
+      }
+
+      if (note.tags && note.tags.length > 0) {
+        content += `Tags: ${note.tags.join(', ')}\n`;
+      }
+
+      // For text format, trigger download
+      if (format === 'text') {
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${note.title || 'note'}-${new Date().toISOString().split('T')[0]}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      return content;
+    } catch (error) {
+      console.error('Error exporting note:', error);
+      throw error;
+    }
+  }, [notes]);
+
+  // Share note via email
+  const shareNote = useCallback(async (noteId: string, recipients: string[]) => {
+    try {
+      const note = notes.find(n => n.id === noteId);
+      if (!note) throw new Error('Note not found');
+
+      const content = await exportNote(noteId, 'text');
+
+      const { error } = await supabase.functions.invoke('send-email', {
+        body: {
+          to: recipients,
+          subject: `Meeting Notes: ${note.title || 'Untitled Note'}`,
+          html: `<pre style="font-family: sans-serif; white-space: pre-wrap;">${content}</pre>`,
+        }
+      });
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('Error sharing note:', error);
+      throw error;
+    }
+  }, [notes, exportNote]);
+
+  // Duplicate a note
+  const duplicateNote = useCallback(async (noteId: string) => {
+    try {
+      const note = notes.find(n => n.id === noteId);
+      if (!note) throw new Error('Note not found');
+
+      const newNote = await createNote({
+        title: `${note.title || 'Untitled'} (Copy)`,
+        text_note: note.text_note,
+        category: note.category,
+        tags: note.tags,
+      });
+
+      return newNote;
+    } catch (error) {
+      console.error('Error duplicating note:', error);
+      throw error;
+    }
+  }, [notes, createNote]);
+
+  // Template management
+  const createTemplate = useCallback(async (template: NoteTemplate) => {
+    const newTemplates = [...templates, { ...template, created_at: new Date().toISOString() }];
+    saveTemplates(newTemplates);
+    return template;
+  }, [templates, saveTemplates]);
+
+  const updateTemplate = useCallback(async (templateId: string, updates: Partial<NoteTemplate>) => {
+    const newTemplates = templates.map(t => 
+      t.id === templateId ? { ...t, ...updates } : t
+    );
+    saveTemplates(newTemplates);
+  }, [templates, saveTemplates]);
+
+  const deleteTemplate = useCallback(async (templateId: string) => {
+    const newTemplates = templates.filter(t => t.id !== templateId);
+    saveTemplates(newTemplates);
+  }, [templates, saveTemplates]);
+
   useEffect(() => {
     fetchNotes();
     fetchCategories();
-  }, [fetchNotes, fetchCategories]);
+    loadTemplates();
+  }, [fetchNotes, fetchCategories, loadTemplates]);
 
   // Real-time subscription
   useEffect(() => {
@@ -286,6 +510,7 @@ export function useMeetingNotes() {
   return {
     notes,
     categories,
+    templates,
     loading,
     searchQuery,
     createNote,
@@ -301,6 +526,14 @@ export function useMeetingNotes() {
     getPinnedNotes,
     getNotesByCategory,
     generateAISummary,
+    extractActionItems,
+    syncWithCalendar,
+    exportNote,
+    shareNote,
+    duplicateNote,
+    createTemplate,
+    updateTemplate,
+    deleteTemplate,
     refetch: fetchNotes,
   };
 }
