@@ -1,7 +1,8 @@
 import { format, isSameDay, addDays, eachDayOfInterval } from 'date-fns';
 import type { CalendarEvent } from '@/types/calendar';
 import { Button } from '@/components/ui/button';
-import { MapPin, Clock, FileText, Users, ExternalLink } from 'lucide-react';
+import { Clock, FileText, Users } from 'lucide-react';
+import { LocationLink } from '@/components/LocationLink';
 import { cn } from '@/lib/utils';
 
 interface CalendarAgendaProps {
@@ -38,25 +39,25 @@ export function CalendarAgenda({ events, currentDate, onEventClick, onOpenNotes 
                   className="bg-card border border-border rounded-lg p-4 cursor-pointer hover:bg-secondary/50 transition-colors"
                 >
                   <div className="flex items-start justify-between">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <div
-                          className="w-3 h-3 rounded-full"
+                          className="w-3 h-3 rounded-full shrink-0"
                           style={{ backgroundColor: event.color || event.calendar_color || '#00ff4d' }}
                         />
-                        <h4 className="font-medium text-foreground">{event.title}</h4>
-                        {event.has_notes && <FileText className="h-4 w-4 text-primary" />}
+                        <h4 className="font-medium text-foreground truncate">{event.title}</h4>
+                        {event.has_notes && <FileText className="h-4 w-4 text-primary shrink-0" />}
                       </div>
-                      <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
                         <div className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {format(new Date(event.start_time), 'h:mm a')} - {format(new Date(event.end_time), 'h:mm a')}
                         </div>
-                        {event.location && (
-                          <div className="flex items-center gap-1">
-                            <MapPin className="h-3 w-3" />
-                            <span className="truncate max-w-[150px]">{event.location}</span>
-                          </div>
+                        {(event.location || event.meeting_link) && (
+                          <LocationLink 
+                            location={event.meeting_link || event.location} 
+                            variant="chip"
+                          />
                         )}
                         {event.attendees?.length > 0 && (
                           <div className="flex items-center gap-1">
@@ -66,15 +67,24 @@ export function CalendarAgenda({ events, currentDate, onEventClick, onOpenNotes 
                         )}
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => { e.stopPropagation(); onOpenNotes(event); }}
-                      className={cn('text-primary', !event.has_notes && 'opacity-50')}
-                    >
-                      <FileText className="h-4 w-4 mr-1" />
-                      {event.has_notes ? 'View Notes' : 'Add Notes'}
-                    </Button>
+                    <div className="flex items-center gap-2 ml-2">
+                      {(event.location || event.meeting_link) && (
+                        <LocationLink 
+                          location={event.meeting_link || event.location} 
+                          variant="button"
+                          className="hidden sm:flex"
+                        />
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); onOpenNotes(event); }}
+                        className={cn('text-primary', !event.has_notes && 'opacity-50')}
+                      >
+                        <FileText className="h-4 w-4 mr-1" />
+                        {event.has_notes ? 'View Notes' : 'Add Notes'}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}

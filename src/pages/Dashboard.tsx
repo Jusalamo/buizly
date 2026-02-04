@@ -5,14 +5,17 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { QRCode } from "@/components/QRCode";
-import { Users, Calendar, StickyNote, QrCode, MapPinCheck, MapPin, Clock, ChevronRight, Filter, UserPlus } from "lucide-react";
+import { Users, Calendar as CalendarIcon, StickyNote, QrCode, Clock, ChevronRight, Filter, UserPlus, FileText } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
 import { useAppCache } from "@/hooks/useAppCache";
 import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 import { useUserSettings } from "@/hooks/useUserSettings";
+import { useCalendar } from "@/hooks/useCalendar";
 import { OptimizedAvatar } from "@/components/OptimizedAvatar";
 import { ProfileOnboarding } from "@/components/ProfileOnboarding";
+import { LocationLink } from "@/components/LocationLink";
+import { isSameDay, format } from "date-fns";
 import type { MeetingStatus } from "@/types/database";
 
 // Use semantic status color tokens
@@ -33,6 +36,7 @@ export default function Dashboard() {
   const { incomingRequests, refetch: refetchRequests } = useConnectionRequests();
   const { profile, connections: allConnections, meetings: allMeetings, loading, isAuthenticated, initialized, refetch } = useAppCache();
   const { settings, loading: settingsLoading } = useUserSettings();
+  const { events: calendarEvents } = useCalendar();
 
   // Set up realtime subscription
   useRealtimeSubscription({
@@ -55,6 +59,15 @@ export default function Dashboard() {
       setShowOnboarding(true);
     }
   }, [settings, isAuthenticated]);
+
+  // Get today's agenda from calendar events
+  const todayAgenda = useMemo(() => {
+    const today = new Date();
+    return calendarEvents
+      .filter(event => isSameDay(new Date(event.start_time), today) && event.status !== 'cancelled')
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+      .slice(0, 5);
+  }, [calendarEvents]);
 
   // Filter upcoming meetings (not cancelled, future dates)
   const upcomingMeetings = useMemo(() => {
@@ -93,9 +106,6 @@ export default function Dashboard() {
     return filtered.slice(0, 5);
   }, [allConnections, connectionFilter]);
 
-  // Get next meeting for check-in
-  const nextMeeting = upcomingMeetings[0];
-
   // Show minimal loading only on first load before auth check
   if (!initialized) {
     return (
@@ -128,11 +138,6 @@ export default function Dashboard() {
       />
     );
   }
-
-  const openGoogleMaps = (location: string) => {
-    const encoded = encodeURIComponent(location);
-    window.open(`https://www.google.com/maps/search/?api=1&query=${encoded}`, '_blank');
-  };
 
   return (
     <Layout>
@@ -191,7 +196,7 @@ export default function Dashboard() {
         <div className="flex flex-row gap-3 overflow-x-auto pb-2">
           {/* Notes Button */}
           <Button 
-            onClick={() => navigate("/capture")}
+            onClick={() => navigate("/notes")}
             className="flex-1 min-w-0 h-auto py-4 px-4 bg-card hover:bg-card/80 border border-border text-foreground flex flex-col items-center gap-2"
             variant="outline"
           >
@@ -213,24 +218,71 @@ export default function Dashboard() {
             <span className="text-sm font-medium">Quick Scan</span>
           </Button>
 
-          {/* Check-in Button */}
+          {/* Calendar Button */}
           <Button 
-            onClick={() => {
-              if (nextMeeting?.location) {
-                openGoogleMaps(nextMeeting.location);
-              } else {
-                navigate("/schedule");
-              }
-            }}
+            onClick={() => navigate("/calendar")}
             className="flex-1 min-w-0 h-auto py-4 px-4 bg-card hover:bg-card/80 border border-border text-foreground flex flex-col items-center gap-2"
             variant="outline"
           >
             <div className="p-2 bg-primary/10 rounded-lg">
-              <MapPinCheck className="h-5 w-5 text-primary" />
+              <CalendarIcon className="h-5 w-5 text-primary" />
             </div>
-            <span className="text-sm font-medium">Check-in</span>
+            <span className="text-sm font-medium">Calendar</span>
           </Button>
         </div>
+
+        {/* Today's Agenda */}
+        {todayAgenda.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-foreground">Today's Agenda</h2>
+              <Button variant="ghost" size="sm" onClick={() => navigate("/calendar")} className="text-primary">
+                View Calendar <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {todayAgenda.map((event) => (
+                <Card
+                  key={event.id}
+                  className="bg-card border-border p-3 cursor-pointer hover:bg-card/80 hover:border-primary/50 transition-all"
+                  onClick={() => navigate("/calendar")}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div 
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: event.color || event.calendar_color || '#00ff4d' }}
+                        />
+                        <p className="font-medium text-foreground text-sm truncate">{event.title}</p>
+                        {event.has_notes && <FileText className="h-3.5 w-3.5 text-primary shrink-0" />}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          <span>{format(new Date(event.start_time), 'h:mm a')}</span>
+                        </div>
+                        {(event.location || event.meeting_link) && (
+                          <LocationLink 
+                            location={event.meeting_link || event.location} 
+                            variant="inline"
+                          />
+                        )}
+                      </div>
+                    </div>
+                    {(event.location || event.meeting_link) && (
+                      <LocationLink 
+                        location={event.meeting_link || event.location} 
+                        variant="button"
+                        className="ml-2"
+                      />
+                    )}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Upcoming Meetings */}
         <div>
@@ -268,7 +320,7 @@ export default function Dashboard() {
                       </div>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
                         <div className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
+                          <CalendarIcon className="h-3 w-3" />
                           <span>{new Date(meeting.meeting_date).toLocaleDateString()}</span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -276,16 +328,7 @@ export default function Dashboard() {
                           <span>{meeting.meeting_time}</span>
                         </div>
                         {meeting.location && (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openGoogleMaps(meeting.location!);
-                            }}
-                            className="flex items-center gap-1 text-primary hover:underline"
-                          >
-                            <MapPin className="h-3 w-3" />
-                            <span className="truncate max-w-[100px]">{meeting.location}</span>
-                          </button>
+                          <LocationLink location={meeting.location} variant="inline" />
                         )}
                       </div>
                     </div>

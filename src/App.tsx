@@ -28,6 +28,7 @@ import Analytics from "./pages/Analytics";
 import Subscription from "./pages/Subscription";
 import Discover from "./pages/Discover";
 import Calendar from "./pages/Calendar";
+import Notes from "./pages/Notes";
 import NotFound from "./pages/NotFound";
 
 // Initialize cache immediately on app load
@@ -44,6 +45,8 @@ function AppRoutes() {
       <Route path="/discover" element={<Discover />} />
       <Route path="/schedule" element={<Schedule />} />
       <Route path="/calendar" element={<Calendar />} />
+      <Route path="/notes" element={<Notes />} />
+      <Route path="/notes/:id" element={<Notes />} />
       <Route path="/profile" element={<Profile />} />
       <Route path="/profile/edit" element={<ProfileEdit />} />
       <Route path="/settings" element={<Settings />} />

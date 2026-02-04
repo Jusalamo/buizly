@@ -283,6 +283,10 @@ export function useMeetingNotes() {
     };
   }, [fetchNotes]);
 
+  const getNote = useCallback((noteId: string) => {
+    return notes.find(n => n.id === noteId) || null;
+  }, [notes]);
+
   return {
     notes,
     categories,
@@ -301,6 +305,7 @@ export function useMeetingNotes() {
     getPinnedNotes,
     getNotesByCategory,
     generateAISummary,
+    getNote,
     refetch: fetchNotes,
   };
 }
