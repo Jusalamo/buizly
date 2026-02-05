@@ -51,6 +51,7 @@ export function NoteEditor({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const transcription = useRealtimeTranscription();
 
@@ -61,6 +62,19 @@ export function NoteEditor({
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
   }, [content]);
+
+  // Scroll textarea into view when focused (keyboard handling)
+  useEffect(() => {
+    const handleFocus = () => {
+      setTimeout(() => {
+        textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+    };
+    
+    const textarea = textareaRef.current;
+    textarea?.addEventListener('focus', handleFocus);
+    return () => textarea?.removeEventListener('focus', handleFocus);
+  }, []);
 
   // Track changes
   useEffect(() => {
@@ -152,11 +166,11 @@ export function NoteEditor({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div ref={containerRef} className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border">
+      <div className="flex items-center justify-between p-4 border-b border-border sticky top-0 bg-background z-10 pt-safe">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={onBack}>
+          <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 min-w-[44px]">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -180,7 +194,7 @@ export function NoteEditor({
             variant="ghost"
             size="icon"
             onClick={handleTogglePin}
-            className={cn(isPinned && 'text-primary')}
+            className={cn("h-10 w-10 min-w-[44px]", isPinned && 'text-primary')}
           >
             <Pin className={cn('h-5 w-5', isPinned && 'fill-current')} />
           </Button>
@@ -194,7 +208,7 @@ export function NoteEditor({
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
+              <Button variant="ghost" size="icon" className="h-10 w-10 min-w-[44px]">
                 <MoreVertical className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
@@ -238,19 +252,19 @@ export function NoteEditor({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Start typing your notes..."
-              className="min-h-[300px] border-0 px-0 focus-visible:ring-0 bg-transparent resize-none text-foreground"
+              className="min-h-[300px] border-0 px-0 focus-visible:ring-0 bg-transparent resize-none text-foreground pb-32"
             />
           </div>
         )}
       </div>
 
       {/* Bottom Action Bar */}
-      <div className="flex items-center justify-between p-4 border-t border-border bg-card">
+      <div className="flex items-center justify-between p-4 border-t border-border bg-card sticky bottom-0 pb-safe" style={{ paddingBottom: 'max(1rem, var(--safe-area-bottom))' }}>
         <Button
           variant={showTranscription ? 'default' : 'outline'}
           size="sm"
           onClick={() => setShowTranscription(!showTranscription)}
-          className="gap-2"
+          className="gap-2 h-10 min-w-[44px]"
         >
           <Mic className={cn('h-4 w-4', transcription.isConnected && 'text-destructive animate-pulse')} />
           {transcription.isConnected ? 'Recording' : 'Transcribe'}
@@ -260,6 +274,7 @@ export function NoteEditor({
           <Button 
             onClick={handleSave}
             disabled={(!title.trim() && !content.trim()) || saving}
+            className="h-10 min-w-[100px]"
           >
             {saving ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />

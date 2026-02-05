@@ -13,10 +13,12 @@ import { QuickEventModal } from '@/components/calendar/QuickEventModal';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { CalendarEvent, CalendarView } from '@/types/calendar';
 import { Plus, Calendar as CalendarIcon, RefreshCw } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export default function CalendarPage() {
   const { isAuthenticated, initialized } = useAppCache();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const {
     events,
     calendars,
@@ -39,13 +41,18 @@ export default function CalendarPage() {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(!isMobile);
 
   useEffect(() => {
     if (initialized && !isAuthenticated) {
       navigate('/auth', { replace: true });
     }
   }, [initialized, isAuthenticated, navigate]);
+
+  // Hide sidebar on mobile by default
+  useEffect(() => {
+    setShowSidebar(!isMobile);
+  }, [isMobile]);
 
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedEvent(event);
@@ -99,7 +106,7 @@ export default function CalendarPage() {
   if (loading) {
     return (
       <Layout title="Calendar">
-        <div className="flex h-[calc(100vh-8rem)] items-center justify-center">
+        <div className="flex h-[calc(100dvh-8rem)] items-center justify-center">
           <Skeleton className="h-full w-full" />
         </div>
       </Layout>
@@ -108,7 +115,7 @@ export default function CalendarPage() {
 
   return (
     <Layout title="Calendar">
-      <div className="flex h-[calc(100vh-8rem)] overflow-hidden">
+      <div className="flex h-[calc(100dvh-8rem)] overflow-hidden">
         {/* Sidebar */}
         {showSidebar && (
           <CalendarSidebar
@@ -134,25 +141,25 @@ export default function CalendarPage() {
 
           {/* Action Bar */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button
                 onClick={() => {
                   setSelectedEvent(null);
                   setShowEventModal(true);
                 }}
-                className="bg-primary text-primary-foreground"
+                className="bg-primary text-primary-foreground h-10 min-w-[44px]"
               >
-                <Plus className="h-4 w-4 mr-2" />
-                New Event
+                <Plus className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">New Event</span>
               </Button>
               <Button
                 variant="outline"
                 onClick={syncGoogleCalendar}
                 disabled={syncing}
-                className="border-border"
+                className="border-border h-10 min-w-[44px]"
               >
-                <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
-                {syncing ? 'Syncing...' : 'Sync'}
+                <RefreshCw className={`h-4 w-4 md:mr-2 ${syncing ? 'animate-spin' : ''}`} />
+                <span className="hidden md:inline">{syncing ? 'Syncing...' : 'Sync'}</span>
               </Button>
             </div>
 

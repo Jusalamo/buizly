@@ -2,11 +2,46 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { MeetingNote, ActionItem, NotesCategory, Bookmark } from '@/types/calendar';
 
+const NOTES_CACHE_KEY = 'meeting_notes_cache';
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function loadFromCache<T>(key: string): T | null {
+  try {
+    const cached = localStorage.getItem(key);
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < CACHE_TTL) {
+        return data;
+      }
+    }
+  } catch (e) {
+    console.warn('Cache read error:', e);
+  }
+  return null;
+}
+
+function saveToCache<T>(key: string, data: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+  } catch (e) {
+    console.warn('Cache write error:', e);
+  }
+}
+
 export function useMeetingNotes() {
   const [notes, setNotes] = useState<MeetingNote[]>([]);
   const [categories, setCategories] = useState<NotesCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Load from cache on mount
+  useEffect(() => {
+    const cachedNotes = loadFromCache<MeetingNote[]>(NOTES_CACHE_KEY);
+    if (cachedNotes) {
+      setNotes(cachedNotes);
+      setLoading(false);
+    }
+  }, []);
 
   const fetchNotes = useCallback(async () => {
     try {
@@ -16,7 +51,7 @@ export function useMeetingNotes() {
       const { data, error } = await supabase
         .from('meeting_notes')
         .select('*')
-        .or(`user_id.eq.${user.id}`)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -36,6 +71,7 @@ export function useMeetingNotes() {
       }));
 
       setNotes(typedNotes);
+      saveToCache(NOTES_CACHE_KEY, typedNotes);
     } catch (error) {
       console.error('Error fetching notes:', error);
     } finally {
@@ -66,41 +102,97 @@ export function useMeetingNotes() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
+      // Optimistic update
+      const tempId = `temp-${Date.now()}`;
+      const optimisticNote: MeetingNote = {
+        id: tempId,
+        user_id: user.id,
+        meeting_id: noteData.meeting_id || `standalone-${Date.now()}`,
+        title: noteData.title || 'Untitled Note',
+        text_note: noteData.text_note || null,
+        category: noteData.category || 'general',
+        tags: noteData.tags || [],
+        is_standalone: !noteData.meeting_id || noteData.meeting_id.startsWith('standalone'),
+        is_pinned: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ai_summary: null,
+        ai_action_items: [],
+        ai_decisions: [],
+        ai_highlights: [],
+        transcript: noteData.transcript || null,
+        transcript_speakers: [],
+        bookmarks: [],
+        audio_note_url: null,
+        photo_urls: null,
+        linked_contact_ids: [],
+        linked_company: null,
+        linked_project: null,
+      };
+      
+      setNotes(prev => [optimisticNote, ...prev]);
+
       const { data, error } = await supabase
         .from('meeting_notes')
         .insert({
           user_id: user.id,
-          meeting_id: noteData.meeting_id,
+          meeting_id: noteData.meeting_id || `standalone-${Date.now()}`,
           title: noteData.title || 'Untitled Note',
           text_note: noteData.text_note,
           category: noteData.category || 'general',
           tags: noteData.tags || [],
-          is_standalone: !noteData.meeting_id,
+          is_standalone: !noteData.meeting_id || noteData.meeting_id.startsWith('standalone'),
           is_pinned: false,
+          transcript: noteData.transcript,
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // Rollback
+        setNotes(prev => prev.filter(n => n.id !== tempId));
+        throw error;
+      }
 
-      // If linked to a calendar event, update has_notes flag
-      if (noteData.meeting_id) {
+      // Replace temp with real note
+      const typedNote: MeetingNote = {
+        ...data,
+        tags: Array.isArray(data.tags) ? data.tags : [],
+        ai_action_items: [],
+        ai_decisions: [],
+        ai_highlights: [],
+        transcript_speakers: [],
+        bookmarks: [],
+        linked_contact_ids: [],
+        category: data.category || 'general',
+        is_pinned: data.is_pinned || false,
+        is_standalone: data.is_standalone || false,
+      };
+      
+      setNotes(prev => prev.map(n => n.id === tempId ? typedNote : n));
+      saveToCache(NOTES_CACHE_KEY, notes.map(n => n.id === tempId ? typedNote : n));
+
+      // If linked to a calendar event (not standalone), update has_notes flag
+      if (noteData.meeting_id && !noteData.meeting_id.startsWith('standalone')) {
         await supabase
           .from('calendar_events')
           .update({ has_notes: true, meeting_notes_id: data.id })
           .eq('id', noteData.meeting_id);
       }
 
-      await fetchNotes();
-      return data;
+      return typedNote;
     } catch (error) {
       console.error('Error creating note:', error);
       throw error;
     }
-  }, [fetchNotes]);
+  }, [notes]);
 
   const updateNote = useCallback(async (noteId: string, updates: Partial<MeetingNote>) => {
     try {
+      // Optimistic update
+      const previousNotes = [...notes];
+      setNotes(prev => prev.map(n => n.id === noteId ? { ...n, ...updates, updated_at: new Date().toISOString() } : n));
+
       // Convert to database-compatible types
       const dbUpdates: Record<string, unknown> = { 
         ...updates,
@@ -121,30 +213,48 @@ export function useMeetingNotes() {
         .update(dbUpdates)
         .eq('id', noteId);
 
-      if (error) throw error;
-      await fetchNotes();
+      if (error) {
+        // Rollback
+        setNotes(previousNotes);
+        throw error;
+      }
+      
+      // Update cache
+      saveToCache(NOTES_CACHE_KEY, notes.map(n => n.id === noteId ? { ...n, ...updates } : n));
     } catch (error) {
       console.error('Error updating note:', error);
       throw error;
     }
-  }, [fetchNotes]);
+  }, [notes]);
 
   const deleteNote = useCallback(async (noteId: string) => {
     try {
+      // Optimistic update
+      const previousNotes = [...notes];
+      setNotes(prev => prev.filter(n => n.id !== noteId));
+
       const { error } = await supabase
         .from('meeting_notes')
         .delete()
         .eq('id', noteId);
 
-      if (error) throw error;
-      await fetchNotes();
+      if (error) {
+        // Rollback
+        setNotes(previousNotes);
+        throw error;
+      }
+      
+      // Update cache
+      saveToCache(NOTES_CACHE_KEY, notes.filter(n => n.id !== noteId));
     } catch (error) {
       console.error('Error deleting note:', error);
       throw error;
     }
-  }, [fetchNotes]);
+  }, [notes]);
 
   const togglePinNote = useCallback(async (noteId: string, isPinned: boolean) => {
+    // Immediate optimistic update
+    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, is_pinned: isPinned } : n));
     await updateNote(noteId, { is_pinned: isPinned });
   }, [updateNote]);
 

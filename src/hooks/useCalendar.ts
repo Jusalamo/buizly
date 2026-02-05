@@ -3,6 +3,33 @@ import { supabase } from '@/integrations/supabase/client';
 import type { CalendarEvent, UserCalendar, CalendarView } from '@/types/calendar';
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, addWeeks, addMonths, subDays, subWeeks, subMonths, format } from 'date-fns';
 
+const CACHE_KEY = 'calendar_events_cache';
+const CALENDARS_CACHE_KEY = 'user_calendars_cache';
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function loadFromCache<T>(key: string): T | null {
+  try {
+    const cached = localStorage.getItem(key);
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < CACHE_TTL) {
+        return data;
+      }
+    }
+  } catch (e) {
+    console.warn('Cache read error:', e);
+  }
+  return null;
+}
+
+function saveToCache<T>(key: string, data: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+  } catch (e) {
+    console.warn('Cache write error:', e);
+  }
+}
+
 export function useCalendar() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [calendars, setCalendars] = useState<UserCalendar[]>([]);
@@ -10,6 +37,14 @@ export function useCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<CalendarView>('week');
   const [syncing, setSyncing] = useState(false);
+
+  // Load from cache on mount for instant UI
+  useEffect(() => {
+    const cachedEvents = loadFromCache<CalendarEvent[]>(CACHE_KEY);
+    const cachedCalendars = loadFromCache<UserCalendar[]>(CALENDARS_CACHE_KEY);
+    if (cachedEvents) setEvents(cachedEvents);
+    if (cachedCalendars) setCalendars(cachedCalendars);
+  }, []);
 
   const getDateRange = useCallback((date: Date, viewType: CalendarView) => {
     switch (viewType) {
@@ -59,6 +94,7 @@ export function useCalendar() {
       }));
 
       setEvents(typedEvents);
+      saveToCache(CACHE_KEY, typedEvents);
     } catch (error) {
       console.error('Error fetching calendar events:', error);
     } finally {
@@ -79,7 +115,9 @@ export function useCalendar() {
 
       if (error) throw error;
 
-      setCalendars((data || []) as UserCalendar[]);
+      const typedCalendars = (data || []) as UserCalendar[];
+      setCalendars(typedCalendars);
+      saveToCache(CALENDARS_CACHE_KEY, typedCalendars);
     } catch (error) {
       console.error('Error fetching calendars:', error);
     }
@@ -89,6 +127,41 @@ export function useCalendar() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
+
+      // Optimistic update - add temp event immediately
+      const tempId = `temp-${Date.now()}`;
+      const optimisticEvent: CalendarEvent = {
+        id: tempId,
+        user_id: user.id,
+        title: eventData.title || 'New Event',
+        description: eventData.description || null,
+        location: eventData.location || null,
+        start_time: eventData.start_time!,
+        end_time: eventData.end_time!,
+        all_day: eventData.all_day || false,
+        timezone: eventData.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+        color: eventData.color || null,
+        meeting_link: eventData.meeting_link || null,
+        source: 'local',
+        status: 'confirmed',
+        visibility: 'default',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        attendees: eventData.attendees || [],
+        reminders: eventData.reminders || [{ type: 'notification', minutes: 15 }],
+        external_id: null,
+        calendar_id: null,
+        calendar_name: null,
+        calendar_color: null,
+        recurrence_rule: eventData.recurrence_rule || null,
+        recurrence_id: null,
+        synced_at: null,
+        has_notes: eventData.has_notes || false,
+        meeting_notes_id: eventData.meeting_notes_id || null,
+        busy: true,
+      };
+      
+      setEvents(prev => [...prev, optimisticEvent]);
 
       const insertData = {
         user_id: user.id,
@@ -106,6 +179,8 @@ export function useCalendar() {
         meeting_link: eventData.meeting_link,
         source: 'local',
         status: 'confirmed',
+        has_notes: eventData.has_notes || false,
+        meeting_notes_id: eventData.meeting_notes_id || null,
       };
 
       const { data, error } = await supabase
@@ -114,9 +189,13 @@ export function useCalendar() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // Rollback on error
+        setEvents(prev => prev.filter(e => e.id !== tempId));
+        throw error;
+      }
 
-      // Sync to Google Calendar if connected
+      // Replace temp event with real event
       const typedEvent: CalendarEvent = {
         ...data,
         attendees: Array.isArray(data.attendees) ? data.attendees as unknown as CalendarEvent['attendees'] : [],
@@ -125,9 +204,13 @@ export function useCalendar() {
         status: 'confirmed' as const,
         visibility: 'default' as const,
       };
+      
+      setEvents(prev => prev.map(e => e.id === tempId ? typedEvent : e));
+      saveToCache(CACHE_KEY, events.map(e => e.id === tempId ? typedEvent : e));
+      
+      // Sync to Google Calendar if connected
       await syncEventToGoogle(typedEvent);
 
-      await fetchEvents();
       return data;
     } catch (error) {
       console.error('Error creating event:', error);
@@ -137,6 +220,10 @@ export function useCalendar() {
 
   const updateEvent = useCallback(async (eventId: string, updates: Partial<CalendarEvent>) => {
     try {
+      // Optimistic update
+      const previousEvents = [...events];
+      setEvents(prev => prev.map(e => e.id === eventId ? { ...e, ...updates } : e));
+
       // Convert to database-compatible types
       const dbUpdates: Record<string, unknown> = { ...updates };
       if (updates.attendees) {
@@ -151,30 +238,44 @@ export function useCalendar() {
         .update(dbUpdates)
         .eq('id', eventId);
 
-      if (error) throw error;
+      if (error) {
+        // Rollback on error
+        setEvents(previousEvents);
+        throw error;
+      }
 
-      await fetchEvents();
+      // Refresh in background
+      fetchEvents();
     } catch (error) {
       console.error('Error updating event:', error);
       throw error;
     }
-  }, [fetchEvents]);
+  }, [events, fetchEvents]);
 
   const deleteEvent = useCallback(async (eventId: string) => {
     try {
+      // Optimistic update
+      const previousEvents = [...events];
+      setEvents(prev => prev.filter(e => e.id !== eventId));
+
       const { error } = await supabase
         .from('calendar_events')
         .delete()
         .eq('id', eventId);
 
-      if (error) throw error;
+      if (error) {
+        // Rollback on error
+        setEvents(previousEvents);
+        throw error;
+      }
 
-      await fetchEvents();
+      // Update cache
+      saveToCache(CACHE_KEY, events.filter(e => e.id !== eventId));
     } catch (error) {
       console.error('Error deleting event:', error);
       throw error;
     }
-  }, [fetchEvents]);
+  }, [events]);
 
   const syncEventToGoogle = async (event: CalendarEvent) => {
     try {
