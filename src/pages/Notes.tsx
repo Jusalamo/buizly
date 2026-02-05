@@ -64,6 +64,7 @@ export default function Notes() {
         if (newNote) {
           navigate(`/notes/${newNote.id}`, { replace: true });
           setSelectedNote(newNote);
+          toast({ title: 'Note created' });
         }
       } else {
         // Update existing note
@@ -119,7 +120,7 @@ export default function Notes() {
 
   return (
     <Layout showNav={!showEditor}>
-      <div className="h-[calc(100vh-4rem)]">
+      <div className="h-[calc(100dvh-4rem)]">
         {showEditor ? (
           <NoteEditor
             note={selectedNote}

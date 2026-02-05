@@ -2,6 +2,32 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Meeting, MeetingParticipant, MeetingStatus } from '@/types/database';
 
+const MEETINGS_CACHE_KEY = 'meetings_cache';
+const CACHE_TTL = 5 * 60 * 1000;
+
+function loadFromCache<T>(key: string): T | null {
+  try {
+    const cached = localStorage.getItem(key);
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < CACHE_TTL) {
+        return data;
+      }
+    }
+  } catch (e) {
+    console.warn('Cache read error:', e);
+  }
+  return null;
+}
+
+function saveToCache<T>(key: string, data: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+  } catch (e) {
+    console.warn('Cache write error:', e);
+  }
+}
+
 interface CreateMeetingData {
   title: string;
   description?: string;
@@ -16,6 +42,15 @@ interface CreateMeetingData {
 export function useMeetings() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Load from cache on mount
+  useEffect(() => {
+    const cachedMeetings = loadFromCache<Meeting[]>(MEETINGS_CACHE_KEY);
+    if (cachedMeetings) {
+      setMeetings(cachedMeetings);
+      setLoading(false);
+    }
+  }, []);
 
   // Clean up past meetings automatically
   const cleanupPastMeetings = useCallback(async (userId: string) => {
@@ -86,6 +121,7 @@ export function useMeetings() {
       }));
 
       setMeetings(typedData);
+      saveToCache(MEETINGS_CACHE_KEY, typedData);
     } catch (error) {
       console.error('Error fetching meetings:', error);
     } finally {
@@ -105,6 +141,31 @@ export function useMeetings() {
         .eq('id', user.id)
         .single();
 
+      // Optimistic update
+      const tempId = `temp-${Date.now()}`;
+      const optimisticMeeting: Meeting = {
+        id: tempId,
+        user_id: user.id,
+        organizer_id: user.id,
+        title: meetingData.title,
+        description: meetingData.description || null,
+        meeting_date: meetingData.meeting_date,
+        meeting_time: meetingData.meeting_time,
+        location: meetingData.location || null,
+        connection_id: meetingData.connection_id || null,
+        parent_meeting_id: meetingData.parent_meeting_id || null,
+        status: 'pending' as MeetingStatus,
+        created_at: new Date().toISOString(),
+        follow_up_sent: false,
+        google_calendar_event_id: null,
+        reminder_1h_sent: null,
+        reminder_24h_sent: null,
+      };
+      
+      setMeetings(prev => [...prev, optimisticMeeting].sort((a, b) => 
+        new Date(a.meeting_date).getTime() - new Date(b.meeting_date).getTime()
+      ));
+
       const { data: meeting, error: meetingError } = await supabase
         .from('meetings')
         .insert({
@@ -122,7 +183,15 @@ export function useMeetings() {
         .select()
         .single();
 
-      if (meetingError) throw meetingError;
+      if (meetingError) {
+        // Rollback
+        setMeetings(prev => prev.filter(m => m.id !== tempId));
+        throw meetingError;
+      }
+
+      // Replace temp with real meeting
+      const typedMeeting: Meeting = { ...meeting, status: (meeting.status || 'pending') as MeetingStatus };
+      setMeetings(prev => prev.map(m => m.id === tempId ? typedMeeting : m));
 
       // Add participants if provided
       if (meetingData.participants && meetingData.participants.length > 0) {
@@ -213,38 +282,50 @@ export function useMeetings() {
     updates: Partial<Meeting>
   ) => {
     try {
+      // Optimistic update
+      const previousMeetings = [...meetings];
+      setMeetings(prev => prev.map(m => m.id === meetingId ? { ...m, ...updates } : m));
+
       const { error } = await supabase
         .from('meetings')
         .update(updates)
         .eq('id', meetingId);
 
-      if (error) throw error;
+      if (error) {
+        setMeetings(previousMeetings);
+        throw error;
+      }
 
-      await fetchMeetings();
+      saveToCache(MEETINGS_CACHE_KEY, meetings.map(m => m.id === meetingId ? { ...m, ...updates } : m));
     } catch (error) {
       console.error('Error updating meeting:', error);
       throw error;
     }
-  }, [fetchMeetings]);
+  }, [meetings]);
 
   const cancelMeeting = useCallback(async (meetingId: string) => {
     try {
+      // Optimistic update
+      setMeetings(prev => prev.map(m => m.id === meetingId ? { ...m, status: 'cancelled' as MeetingStatus } : m));
+
       const { error } = await supabase
         .from('meetings')
         .update({ status: 'cancelled' as MeetingStatus })
         .eq('id', meetingId);
 
       if (error) throw error;
-
-      await fetchMeetings();
     } catch (error) {
       console.error('Error cancelling meeting:', error);
       throw error;
     }
-  }, [fetchMeetings]);
+  }, []);
 
   const deleteMeeting = useCallback(async (meetingId: string) => {
     try {
+      // Optimistic update
+      const previousMeetings = [...meetings];
+      setMeetings(prev => prev.filter(m => m.id !== meetingId));
+
       // First, clear parent_meeting_id references for child meetings
       await supabase
         .from('meetings')
@@ -269,14 +350,17 @@ export function useMeetings() {
         .delete()
         .eq('id', meetingId);
 
-      if (error) throw error;
+      if (error) {
+        setMeetings(previousMeetings);
+        throw error;
+      }
 
-      await fetchMeetings();
+      saveToCache(MEETINGS_CACHE_KEY, meetings.filter(m => m.id !== meetingId));
     } catch (error) {
       console.error('Error deleting meeting:', error);
       throw error;
     }
-  }, [fetchMeetings]);
+  }, [meetings]);
 
   const getMeetingParticipants = useCallback(async (meetingId: string) => {
     try {

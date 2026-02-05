@@ -79,8 +79,8 @@ export const BottomNav = () => {
   };
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50">
-      <div className="max-w-screen-xl mx-auto flex justify-around items-center h-16 px-4">
+    <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 pb-safe">
+      <div className="max-w-screen-xl mx-auto flex justify-around items-center h-16 px-4" style={{ paddingBottom: 'var(--safe-area-bottom)' }}>
         {navItems.map(({ to, icon: Icon, label, matchPaths, notifType, tourId }) => {
           const count = getCount(notifType);
           return (

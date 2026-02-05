@@ -8,9 +8,10 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format, addHours } from 'date-fns';
-import { CalendarIcon, Clock, MapPin, Trash2, FileText, Link } from 'lucide-react';
+import { CalendarIcon, Clock, MapPin, Trash2, FileText, Link, Video, ExternalLink, Loader2 } from 'lucide-react';
 import type { CalendarEvent } from '@/types/calendar';
 import { cn } from '@/lib/utils';
+import { parseLocation } from '@/lib/locationUtils';
 
 interface EventModalProps {
   open: boolean;
@@ -38,6 +39,7 @@ export function EventModal({ open, onOpenChange, event, onSave, onDelete, onOpen
   const [startTime, setStartTime] = useState('09:00 AM');
   const [endTime, setEndTime] = useState('10:00 AM');
   const [color, setColor] = useState('#00ff4d');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (event) {
@@ -59,9 +61,11 @@ export function EventModal({ open, onOpenChange, event, onSave, onDelete, onOpen
       setEndTime('10:00 AM');
       setColor('#00ff4d');
     }
+    setSaving(false);
   }, [event, open]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    setSaving(true);
     const [startHour, startMin, startAmPm] = parseTime(startTime);
     const [endHour, endMin, endAmPm] = parseTime(endTime);
 
@@ -71,15 +75,19 @@ export function EventModal({ open, onOpenChange, event, onSave, onDelete, onOpen
     const endDate = new Date(date);
     endDate.setHours(endAmPm === 'PM' && endHour !== 12 ? endHour + 12 : endHour === 12 && endAmPm === 'AM' ? 0 : endHour, endMin);
 
-    onSave({
-      title,
-      description,
-      location,
-      meeting_link: meetingLink,
-      start_time: startDate.toISOString(),
-      end_time: endDate.toISOString(),
-      color,
-    });
+    try {
+      await onSave({
+        title,
+        description,
+        location,
+        meeting_link: meetingLink,
+        start_time: startDate.toISOString(),
+        end_time: endDate.toISOString(),
+        color,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const parseTime = (time: string): [number, number, string] => {
@@ -88,9 +96,13 @@ export function EventModal({ open, onOpenChange, event, onSave, onDelete, onOpen
     return [hour, min, ampm];
   };
 
+  // Detect location type for preview
+  const locationInfo = location ? parseLocation(location) : null;
+  const meetingLinkInfo = meetingLink ? parseLocation(meetingLink) : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] bg-card border-border max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[500px] bg-card border-border max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-foreground">{event ? 'Edit Event' : 'New Event'}</DialogTitle>
         </DialogHeader>
@@ -145,11 +157,52 @@ export function EventModal({ open, onOpenChange, event, onSave, onDelete, onOpen
           <div className="space-y-2">
             <Label className="flex items-center gap-1"><MapPin className="h-3 w-3" />Location</Label>
             <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Add location" className="bg-secondary border-border" />
+            {/* Location preview */}
+            {locationInfo && location.trim() && (
+              <div className="flex items-center gap-2">
+                {locationInfo.type === 'virtual' ? (
+                  <a
+                    href={locationInfo.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+                  >
+                    <Video className="h-3.5 w-3.5" />
+                    Join {locationInfo.platform}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : (
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(location)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+                  >
+                    <MapPin className="h-3.5 w-3.5" />
+                    Get directions
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
             <Label className="flex items-center gap-1"><Link className="h-3 w-3" />Meeting Link</Label>
             <Input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="Zoom, Google Meet, Teams link" className="bg-secondary border-border" />
+            {/* Meeting link preview */}
+            {meetingLinkInfo && meetingLink.trim() && meetingLinkInfo.type === 'virtual' && (
+              <a
+                href={meetingLinkInfo.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+              >
+                <Video className="h-3.5 w-3.5" />
+                Join {meetingLinkInfo.platform}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -159,18 +212,20 @@ export function EventModal({ open, onOpenChange, event, onSave, onDelete, onOpen
 
           <div className="flex gap-2 pt-4">
             {event && onDelete && (
-              <Button variant="outline" onClick={onDelete} className="text-destructive border-destructive hover:bg-destructive/10">
+              <Button variant="outline" onClick={onDelete} className="text-destructive border-destructive hover:bg-destructive/10 h-10 min-w-[44px]">
                 <Trash2 className="h-4 w-4 mr-2" />Delete
               </Button>
             )}
             {event && onOpenNotes && (
-              <Button variant="outline" onClick={onOpenNotes} className="text-primary border-primary">
+              <Button variant="outline" onClick={onOpenNotes} className="text-primary border-primary h-10 min-w-[44px]">
                 <FileText className="h-4 w-4 mr-2" />{event.has_notes ? 'View Notes' : 'Add Notes'}
               </Button>
             )}
             <div className="flex-1" />
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={handleSave} className="bg-primary text-primary-foreground">Save</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)} className="h-10">Cancel</Button>
+            <Button onClick={handleSave} disabled={saving || !title.trim()} className="bg-primary text-primary-foreground h-10 min-w-[80px]">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
+            </Button>
           </div>
         </div>
       </DialogContent>

@@ -11,8 +11,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useMeetings } from "@/hooks/useMeetings";
+import { useMeetingNotes } from "@/hooks/useMeetingNotes";
+import { useCalendar } from "@/hooks/useCalendar";
 import { ContactSearchModal } from "@/components/ContactSearchModal";
-import { Loader2, MapPin, Users, Plus, X, Search, Image, FileText, CalendarIcon, Clock } from "lucide-react";
+import { LocationLink } from "@/components/LocationLink";
+import { Loader2, MapPin, Users, Plus, X, Search, Image, FileText, CalendarIcon, Clock, Video } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -29,6 +32,7 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { Database } from "@/integrations/supabase/types";
 import { useAppCache } from "@/hooks/useAppCache";
+import { parseLocation } from "@/lib/locationUtils";
 
 type Connection = Database["public"]["Tables"]["connections"]["Row"];
 
@@ -74,6 +78,8 @@ export default function Schedule() {
   
   const { toast } = useToast();
   const { createMeeting } = useMeetings();
+  const { createNote } = useMeetingNotes();
+  const { createEvent } = useCalendar();
   
 
   useEffect(() => {
@@ -256,6 +262,47 @@ export default function Schedule() {
         participants: participants,
       });
 
+      // Auto-create linked note if description/notes exist
+      let noteId: string | undefined;
+      if (description.trim() || notes.trim()) {
+        const noteContent = [
+          description.trim() && `## Agenda\n${description.trim()}`,
+          notes.trim() && `## Notes\n${notes.trim()}`,
+        ].filter(Boolean).join('\n\n');
+        
+        try {
+          const createdNote = await createNote({
+            meeting_id: meeting.id,
+            title: title.trim(),
+            text_note: noteContent,
+            category: 'meeting',
+          });
+          noteId = createdNote?.id;
+        } catch (noteError) {
+          console.error('Failed to create linked note:', noteError);
+        }
+      }
+
+      // Create calendar event with note linkage
+      try {
+        const [hours, minutes] = parseTimeToNumbers(selectedTime);
+        const startDate = new Date(date);
+        startDate.setHours(hours, minutes, 0, 0);
+        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // 1 hour default
+
+        await createEvent({
+          title: title.trim(),
+          description: description.trim(),
+          start_time: startDate.toISOString(),
+          end_time: endDate.toISOString(),
+          location: location.trim() || undefined,
+          meeting_notes_id: noteId,
+          has_notes: !!(description.trim() || notes.trim()),
+        });
+      } catch (calendarError) {
+        console.error('Failed to create calendar event:', calendarError);
+      }
+
       toast({
         title: "Meeting scheduled!",
         description: `Your meeting is set for ${date.toLocaleDateString()} at ${selectedTime}`,
@@ -273,9 +320,21 @@ export default function Schedule() {
     }
   };
 
+  // Helper to parse time string to hours/minutes
+  function parseTimeToNumbers(timeStr: string): [number, number] {
+    const [time, period] = timeStr.split(' ');
+    let [hours, minutes] = time.split(':').map(Number);
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    return [hours, minutes];
+  }
+
+  // Detect location type for preview
+  const locationInfo = location ? parseLocation(location) : null;
+
   return (
     <Layout>
-      <div className="max-w-2xl mx-auto p-6 space-y-6">
+      <div className="max-w-2xl mx-auto p-6 space-y-6 keyboard-safe">
         <div>
           <h1 className="text-2xl font-bold text-foreground mb-2">Schedule Meeting</h1>
           <p className="text-muted-foreground text-sm">Set up a new meeting with your connections</p>
@@ -362,6 +421,22 @@ export default function Schedule() {
               className="bg-secondary border-border text-foreground pl-10"
             />
           </div>
+          {/* Location type preview */}
+          {locationInfo && location.trim() && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+              {locationInfo.type === 'virtual' ? (
+                <>
+                  <Video className="h-3.5 w-3.5 text-primary" />
+                  <span>Virtual meeting detected ({locationInfo.platform})</span>
+                </>
+              ) : (
+                <>
+                  <MapPin className="h-3.5 w-3.5 text-primary" />
+                  <span>Physical location - will open in Maps</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Participants */}
@@ -519,7 +594,7 @@ export default function Schedule() {
         <Button
           onClick={handleSchedule}
           disabled={loading || !date || !selectedTime || !title.trim()}
-          className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6 text-lg"
+          className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6 text-lg min-h-[56px]"
         >
           {loading ? (
             <Loader2 className="h-5 w-5 animate-spin" />

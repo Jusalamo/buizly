@@ -12,9 +12,9 @@ interface LayoutProps {
 
 export const Layout = ({ children, showNav = true, title }: LayoutProps) => {
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen-safe bg-background text-foreground">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-border">
+      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-border pt-safe">
         <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
           <h1 className="font-bold text-lg text-foreground">
             {title || "Buizly"}
@@ -26,7 +26,7 @@ export const Layout = ({ children, showNav = true, title }: LayoutProps) => {
         </div>
       </header>
 
-      <main className={showNav ? "pb-20" : ""}>
+      <main className={showNav ? "pb-safe" : ""} style={{ paddingBottom: showNav ? 'calc(var(--safe-area-bottom) + 5rem)' : undefined }}>
         {children}
       </main>
       
