@@ -102,18 +102,21 @@ export function useMeetingNotes() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
+      // Determine if this is a standalone note (no meeting_id provided)
+      const isStandalone = !noteData.meeting_id;
+
       // Optimistic update
       const tempId = `temp-${Date.now()}`;
       const optimisticNote: MeetingNote = {
         id: tempId,
         user_id: user.id,
-        meeting_id: noteData.meeting_id || `standalone-${Date.now()}`,
+        meeting_id: isStandalone ? undefined : noteData.meeting_id,
         title: noteData.title || 'Untitled Note',
         text_note: noteData.text_note || null,
         category: noteData.category || 'general',
         tags: noteData.tags || [],
-        is_standalone: !noteData.meeting_id || noteData.meeting_id.startsWith('standalone'),
-        is_pinned: false,
+        is_standalone: isStandalone,
+        is_pinned: noteData.is_pinned || false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         ai_summary: null,
@@ -132,19 +135,26 @@ export function useMeetingNotes() {
       
       setNotes(prev => [optimisticNote, ...prev]);
 
+      // Build insert object - use null for meeting_id on standalone notes
+      const insertData: Record<string, unknown> = {
+        user_id: user.id,
+        title: noteData.title || 'Untitled Note',
+        text_note: noteData.text_note,
+        category: noteData.category || 'general',
+        tags: noteData.tags || [],
+        is_standalone: isStandalone,
+        is_pinned: noteData.is_pinned || false,
+        transcript: noteData.transcript,
+      };
+
+      // Only include meeting_id if it's a valid UUID (not standalone)
+      if (!isStandalone && noteData.meeting_id) {
+        insertData.meeting_id = noteData.meeting_id;
+      }
+
       const { data, error } = await supabase
         .from('meeting_notes')
-        .insert({
-          user_id: user.id,
-          meeting_id: noteData.meeting_id || `standalone-${Date.now()}`,
-          title: noteData.title || 'Untitled Note',
-          text_note: noteData.text_note,
-          category: noteData.category || 'general',
-          tags: noteData.tags || [],
-          is_standalone: !noteData.meeting_id || noteData.meeting_id.startsWith('standalone'),
-          is_pinned: false,
-          transcript: noteData.transcript,
-        })
+        .insert(insertData)
         .select()
         .single();
 

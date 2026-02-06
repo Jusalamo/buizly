@@ -335,7 +335,7 @@ export type Database = {
           linked_company: string | null
           linked_contact_ids: string[] | null
           linked_project: string | null
-          meeting_id: string
+          meeting_id: string | null
           photo_urls: string[] | null
           tags: string[] | null
           text_note: string | null
@@ -360,7 +360,7 @@ export type Database = {
           linked_company?: string | null
           linked_contact_ids?: string[] | null
           linked_project?: string | null
-          meeting_id: string
+          meeting_id?: string | null
           photo_urls?: string[] | null
           tags?: string[] | null
           text_note?: string | null
@@ -385,7 +385,7 @@ export type Database = {
           linked_company?: string | null
           linked_contact_ids?: string[] | null
           linked_project?: string | null
-          meeting_id?: string
+          meeting_id?: string | null
           photo_urls?: string[] | null
           tags?: string[] | null
           text_note?: string | null
@@ -395,15 +395,7 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "meeting_notes_meeting_id_fkey"
-            columns: ["meeting_id"]
-            isOneToOne: false
-            referencedRelation: "meetings"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       meeting_participants: {
         Row: {
