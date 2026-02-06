@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { NotesList } from '@/components/notes/NotesList';
 import { NoteEditor } from '@/components/notes/NoteEditor';
 import { useMeetingNotes } from '@/hooks/useMeetingNotes';
+import { useCalendar } from '@/hooks/useCalendar';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Notes() {
@@ -20,10 +21,23 @@ export default function Notes() {
     updateNote,
     deleteNote,
     getNote,
+    linkNoteToEvent,
+    unlinkNoteFromEvent,
   } = useMeetingNotes();
+
+  const { events } = useCalendar();
 
   const [selectedNote, setSelectedNote] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+
+  // Create a map of eventId -> eventTitle for quick lookup
+  const eventTitleMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    events.forEach(e => {
+      map[e.id] = e.title;
+    });
+    return map;
+  }, [events]);
 
   // Load note if ID is provided
   useEffect(() => {
@@ -101,10 +115,34 @@ export default function Notes() {
     }
   }, [selectedNote?.id, deleteNote, toast, handleBack]);
 
+  // Handle linking note to calendar event
+  const handleLinkEvent = useCallback(async (eventId: string) => {
+    if (!selectedNote?.id) return;
+    try {
+      await linkNoteToEvent(selectedNote.id, eventId);
+      setSelectedNote((prev: any) => prev ? { ...prev, meeting_id: eventId } : prev);
+      toast({ title: 'Note linked to event' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Failed to link', description: error.message });
+    }
+  }, [selectedNote?.id, linkNoteToEvent, toast]);
+
+  // Handle unlinking note from calendar event
+  const handleUnlinkEvent = useCallback(async () => {
+    if (!selectedNote?.id) return;
+    try {
+      await unlinkNoteFromEvent(selectedNote.id);
+      setSelectedNote((prev: any) => prev ? { ...prev, meeting_id: undefined } : prev);
+      toast({ title: 'Note unlinked from event' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Failed to unlink', description: error.message });
+    }
+  }, [selectedNote?.id, unlinkNoteFromEvent, toast]);
+
   // Show editor if viewing/editing a note
   const showEditor = id || isNew;
 
-  // Transform notes for NotesList component
+  // Transform notes for NotesList component with linked event titles
   const notesForList = notes.map(n => ({
     id: n.id,
     title: n.title || null,
@@ -113,9 +151,15 @@ export default function Notes() {
     updated_at: n.updated_at || null,
     is_pinned: n.is_pinned,
     tags: n.tags,
-    meeting_id: n.meeting_id,
+    meeting_id: n.meeting_id || null,
     category: n.category,
+    linkedEventTitle: n.meeting_id ? eventTitleMap[n.meeting_id] || null : null,
   }));
+
+  // Get linked event title for current note
+  const currentLinkedEventTitle = selectedNote?.meeting_id 
+    ? eventTitleMap[selectedNote.meeting_id] || null 
+    : null;
 
   return (
     <Layout showNav={!showEditor}>
@@ -127,6 +171,9 @@ export default function Notes() {
             onBack={handleBack}
             onSave={handleSave}
             onDelete={selectedNote ? handleDelete : undefined}
+            onLinkEvent={handleLinkEvent}
+            onUnlinkEvent={handleUnlinkEvent}
+            linkedEventTitle={currentLinkedEventTitle}
             saving={saving}
           />
         ) : (

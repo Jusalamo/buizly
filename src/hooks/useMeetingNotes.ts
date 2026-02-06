@@ -407,6 +407,84 @@ export function useMeetingNotes() {
     return notes.find(n => n.id === noteId) || null;
   }, [notes]);
 
+  // Link a note to a calendar event
+  const linkNoteToEvent = useCallback(async (noteId: string, eventId: string) => {
+    try {
+      // Optimistic update
+      setNotes(prev => prev.map(n => 
+        n.id === noteId ? { ...n, meeting_id: eventId, is_standalone: false } : n
+      ));
+
+      // Update note
+      const { error: noteError } = await supabase
+        .from('meeting_notes')
+        .update({ meeting_id: eventId, is_standalone: false })
+        .eq('id', noteId);
+
+      if (noteError) throw noteError;
+
+      // Update calendar event
+      const { error: eventError } = await supabase
+        .from('calendar_events')
+        .update({ has_notes: true, meeting_notes_id: noteId })
+        .eq('id', eventId);
+
+      if (eventError) throw eventError;
+
+      // Update cache
+      saveToCache(NOTES_CACHE_KEY, notes.map(n => 
+        n.id === noteId ? { ...n, meeting_id: eventId, is_standalone: false } : n
+      ));
+    } catch (error) {
+      console.error('Error linking note to event:', error);
+      // Rollback
+      await fetchNotes();
+      throw error;
+    }
+  }, [notes, fetchNotes]);
+
+  // Unlink a note from its calendar event
+  const unlinkNoteFromEvent = useCallback(async (noteId: string) => {
+    try {
+      // Get the current meeting_id before unlinking
+      const note = notes.find(n => n.id === noteId);
+      const previousEventId = note?.meeting_id;
+
+      // Optimistic update
+      setNotes(prev => prev.map(n => 
+        n.id === noteId ? { ...n, meeting_id: undefined, is_standalone: true } : n
+      ));
+
+      // Update note
+      const { error: noteError } = await supabase
+        .from('meeting_notes')
+        .update({ meeting_id: null, is_standalone: true })
+        .eq('id', noteId);
+
+      if (noteError) throw noteError;
+
+      // Update calendar event if there was one
+      if (previousEventId) {
+        const { error: eventError } = await supabase
+          .from('calendar_events')
+          .update({ has_notes: false, meeting_notes_id: null })
+          .eq('id', previousEventId);
+
+        if (eventError) console.error('Error updating calendar event:', eventError);
+      }
+
+      // Update cache
+      saveToCache(NOTES_CACHE_KEY, notes.map(n => 
+        n.id === noteId ? { ...n, meeting_id: undefined, is_standalone: true } : n
+      ));
+    } catch (error) {
+      console.error('Error unlinking note from event:', error);
+      // Rollback
+      await fetchNotes();
+      throw error;
+    }
+  }, [notes, fetchNotes]);
+
   return {
     notes,
     categories,
@@ -426,6 +504,8 @@ export function useMeetingNotes() {
     getNotesByCategory,
     generateAISummary,
     getNote,
+    linkNoteToEvent,
+    unlinkNoteFromEvent,
     refetch: fetchNotes,
   };
 }
