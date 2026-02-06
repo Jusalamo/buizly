@@ -52,14 +52,13 @@ export default function Notes() {
     setSaving(true);
     try {
       if (isNew || !data.id) {
-        // Create new note - need a meeting_id for standalone notes
-        const standaloneId = `standalone-${Date.now()}`;
+        // Create new standalone note - no meeting_id needed
         const newNote = await createNote({
-          meeting_id: standaloneId,
           title: data.title,
           text_note: data.text_note,
           is_pinned: data.is_pinned,
           transcript: data.transcript,
+          // No meeting_id - hook will handle it as standalone
         });
         if (newNote) {
           navigate(`/notes/${newNote.id}`, { replace: true });
