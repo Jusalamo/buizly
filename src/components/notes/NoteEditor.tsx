@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowLeft, Pin, MoreVertical, Mic, Trash2, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, Pin, MoreVertical, Mic, Trash2, Loader2, Check, Calendar, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { TranscriptionPanel } from './TranscriptionPanel';
 import { AIActionsMenu } from './AIActionsMenu';
+import { CalendarLinkModal } from './CalendarLinkModal';
 import { useRealtimeTranscription } from '@/hooks/useRealtimeTranscription';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +25,7 @@ interface NoteData {
   ai_summary: string | null;
   ai_action_items: any | null;
   transcript: string | null;
+  meeting_id?: string | null;
 }
 
 interface NoteEditorProps {
@@ -31,6 +34,9 @@ interface NoteEditorProps {
   onBack: () => void;
   onSave: (data: Partial<NoteData>) => Promise<void>;
   onDelete?: () => Promise<void>;
+  onLinkEvent?: (eventId: string) => Promise<void>;
+  onUnlinkEvent?: () => Promise<void>;
+  linkedEventTitle?: string | null;
   saving?: boolean;
 }
 
@@ -40,12 +46,16 @@ export function NoteEditor({
   onBack,
   onSave,
   onDelete,
+  onLinkEvent,
+  onUnlinkEvent,
+  linkedEventTitle,
   saving,
 }: NoteEditorProps) {
   const [title, setTitle] = useState(note?.title || '');
   const [content, setContent] = useState(note?.text_note || '');
   const [isPinned, setIsPinned] = useState(note?.is_pinned || false);
   const [showTranscription, setShowTranscription] = useState(false);
+  const [showCalendarLink, setShowCalendarLink] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -189,7 +199,23 @@ export function NoteEditor({
           </div>
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          {/* Calendar Link Button */}
+          {!isNew && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowCalendarLink(true)}
+              className={cn("h-10 w-10 min-w-[44px]", note?.meeting_id && 'text-primary')}
+            >
+              {note?.meeting_id ? (
+                <Link2 className="h-5 w-5" />
+              ) : (
+                <Calendar className="h-5 w-5" />
+              )}
+            </Button>
+          )}
+
           <Button
             variant="ghost"
             size="icon"
@@ -226,6 +252,16 @@ export function NoteEditor({
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Linked Event Badge */}
+      {note?.meeting_id && linkedEventTitle && (
+        <div className="px-4 pb-2">
+          <Badge variant="secondary" className="gap-1.5">
+            <Calendar className="h-3 w-3" />
+            {linkedEventTitle}
+          </Badge>
+        </div>
+      )}
 
       {/* Editor */}
       <div className="flex-1 overflow-y-auto">
@@ -283,6 +319,17 @@ export function NoteEditor({
           </Button>
         )}
       </div>
+
+      {/* Calendar Link Modal */}
+      {!isNew && onLinkEvent && onUnlinkEvent && (
+        <CalendarLinkModal
+          open={showCalendarLink}
+          onOpenChange={setShowCalendarLink}
+          currentEventId={note?.meeting_id}
+          onLinkEvent={onLinkEvent}
+          onUnlinkEvent={onUnlinkEvent}
+        />
+      )}
     </div>
   );
 }

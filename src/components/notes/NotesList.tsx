@@ -1,10 +1,18 @@
 import { useState, useMemo } from 'react';
-import { Search, Plus, Filter } from 'lucide-react';
+import { Search, Plus, Filter, FileText, Calendar, User, Lightbulb, CheckSquare } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { NoteCard } from './NoteCard';
 import { NotesEmptyState } from './NotesEmptyState';
 import { cn } from '@/lib/utils';
+
+const CATEGORIES = [
+  { id: 'all', label: 'All', icon: FileText },
+  { id: 'meeting', label: 'Meeting', icon: Calendar },
+  { id: 'personal', label: 'Personal', icon: User },
+  { id: 'ideas', label: 'Ideas', icon: Lightbulb },
+  { id: 'tasks', label: 'Tasks', icon: CheckSquare },
+];
 
 interface Note {
   id: string;
@@ -14,8 +22,9 @@ interface Note {
   updated_at: string | null;
   is_pinned: boolean | null;
   tags: string[] | null;
-  meeting_id: string;
+  meeting_id: string | null;
   category: string | null;
+  linkedEventTitle?: string | null;
 }
 
 interface NotesListProps {
@@ -35,18 +44,26 @@ export function NotesList({
 }: NotesListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('all');
 
   const filteredNotes = useMemo(() => {
     let filtered = [...notes];
 
-    // Filter by search query
+    // Filter by search query (title, content, tags, category, linked event title)
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(note =>
         note.title?.toLowerCase().includes(query) ||
         note.text_note?.toLowerCase().includes(query) ||
-        note.tags?.some(tag => tag.toLowerCase().includes(query))
+        note.tags?.some(tag => tag.toLowerCase().includes(query)) ||
+        note.category?.toLowerCase().includes(query) ||
+        note.linkedEventTitle?.toLowerCase().includes(query)
       );
+    }
+
+    // Filter by category
+    if (selectedCategory !== 'all') {
+      filtered = filtered.filter(note => note.category === selectedCategory);
     }
 
     // Filter by pinned
@@ -62,7 +79,7 @@ export function NotesList({
       const bDate = new Date(b.updated_at || b.created_at).getTime();
       return bDate - aDate;
     });
-  }, [notes, searchQuery, showPinnedOnly]);
+  }, [notes, searchQuery, selectedCategory, showPinnedOnly]);
 
   const pinnedNotes = filteredNotes.filter(n => n.is_pinned);
   const unpinnedNotes = filteredNotes.filter(n => !n.is_pinned);
@@ -85,7 +102,7 @@ export function NotesList({
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search notes..."
+              placeholder="Search notes, events..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -102,6 +119,29 @@ export function NotesList({
           <Button size="icon" onClick={onCreateNote} className="shrink-0">
             <Plus className="h-4 w-4" />
           </Button>
+        </div>
+
+        {/* Category Filter Tabs */}
+        <div className="flex gap-1.5 overflow-x-auto pb-1 -mb-1 scrollbar-hide">
+          {CATEGORIES.map(cat => {
+            const Icon = cat.icon;
+            const isActive = selectedCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.id)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors',
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80'
+                )}
+              >
+                <Icon className="h-3 w-3" />
+                {cat.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -137,6 +177,8 @@ export function NotesList({
                       updatedAt={note.updated_at}
                       isPinned={note.is_pinned || false}
                       tags={note.tags}
+                      linkedEventTitle={note.linkedEventTitle}
+                      isLinked={!!note.meeting_id}
                       onClick={() => onSelectNote(note.id)}
                     />
                   ))}
@@ -159,6 +201,8 @@ export function NotesList({
                       id={note.id}
                       title={note.title}
                       content={note.text_note}
+                      linkedEventTitle={note.linkedEventTitle}
+                      isLinked={!!note.meeting_id}
                       createdAt={note.created_at}
                       updatedAt={note.updated_at}
                       isPinned={false}
