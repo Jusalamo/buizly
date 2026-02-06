@@ -1,171 +1,321 @@
 
-# Fix Notes Saving Error - Standalone Notes Support
+# Notes Search Enhancement & Calendar Linking UI
 
-## Problem Identified
-When creating a note, the error `"save failed input syntax for type uuid: standalone-1770274991807"` occurs because:
-
-1. The `meeting_notes` table has `meeting_id` defined as `UUID NOT NULL` with a foreign key reference to the `meetings` table
-2. The code is trying to insert a string like `"standalone-1770274991807"` into a UUID column
-3. PostgreSQL cannot convert this string to a UUID type
-
-## Solution Overview
-We need to modify the database schema and application code to properly support standalone notes that don't need to be linked to a meeting.
+## Overview
+This plan implements two key features:
+1. **Enhanced Search Filtering** - Improve the existing search to include category filtering, and show linked calendar event titles in the note cards
+2. **Calendar Linking UI** - Add ability to link/unlink notes to calendar events from within the note editor
 
 ---
 
-## Database Changes
+## Part 1: Enhanced Search & Filtering
 
-### Migration: Make meeting_id Nullable for Standalone Notes
+### Current State
+The `NotesList.tsx` already has search functionality that filters by:
+- Title
+- Content (`text_note`)
+- Tags
 
-```sql
--- 1. Drop the existing foreign key constraint
-ALTER TABLE public.meeting_notes 
-DROP CONSTRAINT IF EXISTS meeting_notes_meeting_id_fkey;
+**What's missing:**
+- Category filtering (chips/tabs)
+- Calendar event title in search results
+- Visual indicator showing linked vs standalone notes
 
--- 2. Make meeting_id nullable for standalone notes
-ALTER TABLE public.meeting_notes 
-ALTER COLUMN meeting_id DROP NOT NULL;
+### Changes to NotesList.tsx
 
--- 3. Add new foreign key that allows NULL (references calendar_events for linked notes)
--- Note: We don't re-add the meetings FK since notes can be standalone
-
--- 4. Update the constraint to ensure data integrity
-ALTER TABLE public.meeting_notes 
-DROP CONSTRAINT IF EXISTS check_standalone_has_user_id;
-
-ALTER TABLE public.meeting_notes
-ADD CONSTRAINT check_note_integrity
-CHECK (
-  -- Standalone notes must have user_id
-  (is_standalone = true AND user_id IS NOT NULL AND meeting_id IS NULL) OR
-  -- Linked notes must have meeting_id
-  (is_standalone = false AND meeting_id IS NOT NULL)
-);
+**Add category filter tabs:**
+```typescript
+// Add category tabs below search bar
+const categories = ['all', 'meeting', 'personal', 'ideas', 'tasks'];
+const [selectedCategory, setSelectedCategory] = useState('all');
 ```
 
-### Update RLS Policies
+**Enhance the filtering logic:**
+- Include category filtering
+- Search by linked meeting title
+- Add visual badge for linked notes
 
-```sql
--- Drop existing policies
-DROP POLICY IF EXISTS "Users can view their meeting and standalone notes" ON meeting_notes;
-DROP POLICY IF EXISTS "Users can create their meeting and standalone notes" ON meeting_notes;
-DROP POLICY IF EXISTS "Users can update their meeting and standalone notes" ON meeting_notes;
-DROP POLICY IF EXISTS "Users can delete their meeting and standalone notes" ON meeting_notes;
+### Changes to NoteCard.tsx
 
--- Create simplified policies based on user_id
-CREATE POLICY "Users can view their notes"
-ON meeting_notes FOR SELECT
-USING (user_id = auth.uid());
+**Pass linked event title to cards:**
+- Accept `linkedEventTitle` prop (fetched from calendar events)
+- Display calendar icon with event title when note is linked to an event
+- Add "Standalone" badge for notes without calendar link
 
-CREATE POLICY "Users can create notes"
-ON meeting_notes FOR INSERT
-WITH CHECK (user_id = auth.uid());
+### Data Flow Update
 
-CREATE POLICY "Users can update their notes"
-ON meeting_notes FOR UPDATE
-USING (user_id = auth.uid());
+**In Notes.tsx:**
+- Import `useCalendar` hook to get calendar events
+- Map each note to include `linkedEventTitle` by looking up the `meeting_id` in calendar events
 
-CREATE POLICY "Users can delete their notes"
-ON meeting_notes FOR DELETE
-USING (user_id = auth.uid());
+---
+
+## Part 2: Calendar Linking UI
+
+### New Component: CalendarLinkModal
+
+**File: `src/components/notes/CalendarLinkModal.tsx`**
+
+A dialog that allows users to:
+1. View currently linked event (if any)
+2. Search and select a calendar event to link
+3. Unlink from current event
+4. Quick create a new event and link it
+
+**UI Design:**
+```
+┌──────────────────────────────────────┐
+│  Link to Calendar Event       [X]   │
+├──────────────────────────────────────┤
+│                                      │
+│  ┌────────────────────────────────┐  │
+│  │ 🔍 Search events...            │  │
+│  └────────────────────────────────┘  │
+│                                      │
+│  Currently Linked:                   │
+│  ┌────────────────────────────────┐  │
+│  │ 📅 Meeting with John           │  │
+│  │    Tomorrow at 2:00 PM   [⊘]   │  │
+│  └────────────────────────────────┘  │
+│                                      │
+│  Upcoming Events:                    │
+│  ┌────────────────────────────────┐  │
+│  │ Team Standup - Today 9 AM      │  │
+│  │ Design Review - Today 3 PM     │  │
+│  │ Sprint Planning - Tomorrow     │  │
+│  └────────────────────────────────┘  │
+│                                      │
+│  ───────── or ─────────             │
+│                                      │
+│  [+ Create New Event & Link]        │
+│                                      │
+└──────────────────────────────────────┘
+```
+
+### Update NoteEditor.tsx
+
+Add calendar link functionality:
+
+1. **New state:**
+   - `linkedEvent` - the currently linked calendar event
+   - `showCalendarLink` - controls the modal visibility
+
+2. **New UI elements:**
+   - Calendar link button in the header (next to pin)
+   - Shows linked event badge if linked
+   - Opens `CalendarLinkModal` on click
+
+3. **Callback handlers:**
+   - `handleLinkToEvent(eventId)` - links note to calendar event
+   - `handleUnlinkFromEvent()` - removes calendar link
+
+### Update useMeetingNotes Hook
+
+**Add new function:**
+```typescript
+const linkNoteToEvent = async (noteId: string, eventId: string) => {
+  // 1. Update meeting_notes.meeting_id = eventId
+  // 2. Update meeting_notes.is_standalone = false
+  // 3. Update calendar_events.has_notes = true
+  // 4. Update calendar_events.meeting_notes_id = noteId
+};
+
+const unlinkNoteFromEvent = async (noteId: string) => {
+  // 1. Get the current meeting_id from the note
+  // 2. Update meeting_notes.meeting_id = null
+  // 3. Update meeting_notes.is_standalone = true
+  // 4. Update calendar_events.has_notes = false
+  // 5. Update calendar_events.meeting_notes_id = null
+};
 ```
 
 ---
 
-## Code Changes
+## File Changes Summary
 
-### 1. Update useMeetingNotes Hook
+### New Files (1)
+1. `src/components/notes/CalendarLinkModal.tsx` - Modal for linking notes to calendar events
 
-**File: `src/hooks/useMeetingNotes.ts`**
+### Modified Files (5)
+1. `src/components/notes/NotesList.tsx` - Add category filter tabs, enhance search
+2. `src/components/notes/NoteCard.tsx` - Add linked event title display, standalone badge
+3. `src/components/notes/NoteEditor.tsx` - Add calendar link button and modal trigger
+4. `src/hooks/useMeetingNotes.ts` - Add `linkNoteToEvent` and `unlinkNoteFromEvent` functions
+5. `src/pages/Notes.tsx` - Integrate calendar events for linked event lookup
 
-Changes to `createNote` function:
-- For standalone notes: Set `meeting_id: null` instead of `"standalone-xxx"`
-- Always set `user_id` to current user
-- Set `is_standalone: true` when no meeting_id is provided
+---
+
+## Implementation Details
+
+### NotesList.tsx Changes
 
 ```typescript
-// Current (broken):
-meeting_id: noteData.meeting_id || `standalone-${Date.now()}`
+// Add category filter chips
+const categories = [
+  { id: 'all', label: 'All', icon: FileText },
+  { id: 'meeting', label: 'Meeting', icon: Calendar },
+  { id: 'personal', label: 'Personal', icon: User },
+];
 
-// Fixed:
-meeting_id: noteData.meeting_id || null  // null for standalone
-is_standalone: !noteData.meeting_id      // true when no meeting_id
+// Enhanced filter logic
+const filteredNotes = useMemo(() => {
+  let filtered = [...notes];
+  
+  // Search by query (title, content, tags, category, linked event)
+  if (searchQuery.trim()) {
+    const query = searchQuery.toLowerCase();
+    filtered = filtered.filter(note =>
+      note.title?.toLowerCase().includes(query) ||
+      note.text_note?.toLowerCase().includes(query) ||
+      note.tags?.some(tag => tag.toLowerCase().includes(query)) ||
+      note.category?.toLowerCase().includes(query) ||
+      note.linkedEventTitle?.toLowerCase().includes(query)
+    );
+  }
+  
+  // Filter by category
+  if (selectedCategory !== 'all') {
+    filtered = filtered.filter(note => note.category === selectedCategory);
+  }
+  
+  // ... existing pinned/sort logic
+}, [notes, searchQuery, selectedCategory, showPinnedOnly]);
 ```
 
-### 2. Update Notes Page
-
-**File: `src/pages/Notes.tsx`**
-
-Changes to `handleSave` function:
-- Remove the `standaloneId` generation
-- Just pass the data without a fake meeting_id
+### CalendarLinkModal.tsx Structure
 
 ```typescript
-// Current (broken):
-const standaloneId = `standalone-${Date.now()}`;
-const newNote = await createNote({
-  meeting_id: standaloneId,
-  ...
-});
+interface CalendarLinkModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  currentEventId?: string | null;
+  currentEventTitle?: string | null;
+  onLinkEvent: (eventId: string) => void;
+  onUnlinkEvent: () => void;
+  onCreateAndLink: () => void;
+}
 
-// Fixed:
-const newNote = await createNote({
-  title: data.title,
-  text_note: data.text_note,
-  is_pinned: data.is_pinned,
-  transcript: data.transcript,
-  // No meeting_id - hook will set to null and is_standalone: true
-});
-```
-
-### 3. Update Type Definitions
-
-**File: `src/types/calendar.ts`**
-
-The `MeetingNote` interface already has `meeting_id` as optional:
-```typescript
-export interface MeetingNote {
-  id: string;
-  meeting_id?: string;  // Already optional
-  user_id?: string;
-  // ...
+export function CalendarLinkModal({
+  open,
+  onOpenChange,
+  currentEventId,
+  currentEventTitle,
+  onLinkEvent,
+  onUnlinkEvent,
+  onCreateAndLink,
+}: CalendarLinkModalProps) {
+  const { events } = useCalendar();
+  const [search, setSearch] = useState('');
+  
+  // Filter events by search query
+  const filteredEvents = events.filter(e => 
+    e.title.toLowerCase().includes(search.toLowerCase())
+  );
+  
+  // Group by today, tomorrow, upcoming
+  const groupedEvents = useMemo(() => {
+    // ... group logic
+  }, [filteredEvents]);
+  
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* Modal content */}
+    </Dialog>
+  );
 }
 ```
 
+### useMeetingNotes.ts New Functions
+
+```typescript
+const linkNoteToEvent = useCallback(async (noteId: string, eventId: string) => {
+  try {
+    // Optimistic update
+    setNotes(prev => prev.map(n => 
+      n.id === noteId ? { ...n, meeting_id: eventId, is_standalone: false } : n
+    ));
+    
+    // Update note
+    await supabase
+      .from('meeting_notes')
+      .update({ meeting_id: eventId, is_standalone: false })
+      .eq('id', noteId);
+    
+    // Update calendar event
+    await supabase
+      .from('calendar_events')
+      .update({ has_notes: true, meeting_notes_id: noteId })
+      .eq('id', eventId);
+      
+  } catch (error) {
+    console.error('Error linking note to event:', error);
+    throw error;
+  }
+}, []);
+
+const unlinkNoteFromEvent = useCallback(async (noteId: string, eventId: string) => {
+  try {
+    // Optimistic update
+    setNotes(prev => prev.map(n => 
+      n.id === noteId ? { ...n, meeting_id: undefined, is_standalone: true } : n
+    ));
+    
+    // Update note
+    await supabase
+      .from('meeting_notes')
+      .update({ meeting_id: null, is_standalone: true })
+      .eq('id', noteId);
+    
+    // Update calendar event
+    await supabase
+      .from('calendar_events')
+      .update({ has_notes: false, meeting_notes_id: null })
+      .eq('id', eventId);
+      
+  } catch (error) {
+    console.error('Error unlinking note from event:', error);
+    throw error;
+  }
+}, []);
+```
+
 ---
 
-## Files to Modify
+## Technical Considerations
 
-1. **Database Migration** (new file)
-   - Make `meeting_id` nullable
-   - Drop old foreign key constraint
-   - Add integrity constraint
-   - Update RLS policies to use `user_id`
+### Database Relationships
+- `meeting_notes.meeting_id` references `calendar_events.id` (nullable for standalone)
+- `calendar_events.meeting_notes_id` references `meeting_notes.id` (bidirectional link)
+- `calendar_events.has_notes` boolean flag for quick checks
 
-2. **`src/hooks/useMeetingNotes.ts`**
-   - Update `createNote` to use `null` for standalone notes
-   - Ensure `user_id` is always set
-   - Update optimistic note creation
+### Search Performance
+- Client-side filtering is sufficient for typical note volumes (~100-500 notes)
+- If performance becomes an issue, can add database-level full-text search later
 
-3. **`src/pages/Notes.tsx`**
-   - Remove `standaloneId` generation
-   - Pass note data without fake meeting_id
+### Calendar Event Lookup
+- Use `useCalendar` hook which already caches events
+- Create a map `{ eventId: eventTitle }` for O(1) lookup in note cards
 
 ---
 
-## Technical Details
+## Implementation Order
 
-### Why This Fix Works
+1. **Phase 1: Enhanced Search**
+   - Add category filter chips to NotesList
+   - Enhance filtering logic to include category
+   - Update NoteCard to display linked event info
 
-1. **UUID Constraint**: By making `meeting_id` nullable, we avoid the UUID parse error entirely
-2. **Data Integrity**: The new constraint ensures:
-   - Standalone notes have `user_id` but no `meeting_id`
-   - Linked notes have a valid `meeting_id`
-3. **RLS Security**: Policies now use `user_id = auth.uid()` which works for all notes
-4. **No Breaking Changes**: Existing linked notes continue to work
+2. **Phase 2: Calendar Link Modal**
+   - Create CalendarLinkModal component
+   - Add event search and selection UI
+   - Add unlink functionality
 
-### Backward Compatibility
+3. **Phase 3: Hook Integration**
+   - Add `linkNoteToEvent` and `unlinkNoteFromEvent` to useMeetingNotes
+   - Add calendar link button to NoteEditor
+   - Wire up modal with callbacks
 
-- Existing notes with valid `meeting_id` UUIDs remain unchanged
-- New standalone notes will have `meeting_id: null`
-- The `is_standalone` flag clearly distinguishes the two types
+4. **Phase 4: Data Flow**
+   - Update Notes.tsx to pass calendar events
+   - Create event title lookup map
+   - Display linked event titles in NoteCard
