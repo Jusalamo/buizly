@@ -57,6 +57,16 @@ export function NoteEditor({
   const [showTranscription, setShowTranscription] = useState(false);
   const [showCalendarLink, setShowCalendarLink] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Sync local state when note prop updates (handles async loading)
+  useEffect(() => {
+    if (note) {
+      setTitle(note.title || '');
+      setContent(note.text_note || '');
+      setIsPinned(note.is_pinned || false);
+      setHasChanges(false);
+    }
+  }, [note?.id]);
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
@@ -328,6 +338,7 @@ export function NoteEditor({
           currentEventId={note?.meeting_id}
           onLinkEvent={onLinkEvent}
           onUnlinkEvent={onUnlinkEvent}
+          noteTitle={title || note?.title || undefined}
         />
       )}
     </div>
