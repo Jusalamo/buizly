@@ -31,7 +31,7 @@ function saveToCache<T>(key: string, data: T): void {
 export function useMeetingNotes() {
   const [notes, setNotes] = useState<MeetingNote[]>([]);
   const [categories, setCategories] = useState<NotesCategory[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Load from cache on mount
@@ -45,13 +45,13 @@ export function useMeetingNotes() {
 
   const fetchNotes = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       const { data, error } = await supabase
         .from('meeting_notes')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', session.user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -81,13 +81,13 @@ export function useMeetingNotes() {
 
   const fetchCategories = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       const { data, error } = await supabase
         .from('notes_categories')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', session.user.id)
         .order('sort_order');
 
       if (error) throw error;
@@ -99,8 +99,9 @@ export function useMeetingNotes() {
 
   const createNote = useCallback(async (noteData: Partial<MeetingNote>) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error('Not authenticated');
+      const user = session.user;
 
       // Determine if this is a standalone note (no meeting_id provided)
       const isStandalone = !noteData.meeting_id;
@@ -305,13 +306,14 @@ export function useMeetingNotes() {
 
   const createCategory = useCallback(async (name: string, color: string = '#00ff4d') => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error('Not authenticated');
+      
 
       const { error } = await supabase
         .from('notes_categories')
         .insert({
-          user_id: user.id,
+          user_id: session.user.id,
           name,
           color,
           sort_order: categories.length,

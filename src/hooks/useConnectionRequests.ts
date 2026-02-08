@@ -44,13 +44,14 @@ export function useConnectionRequests() {
     fetchingRef.current = true;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
         fetchingRef.current = false;
         setLoading(false);
         return;
       }
-      setCurrentUserId(user.id);
+      setCurrentUserId(session.user.id);
+      const user = session.user;
 
       // Parallel fetch: requests AND my actual connections
       const [requestsResult, connectionsResult] = await Promise.all([

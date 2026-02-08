@@ -21,7 +21,7 @@ const cache: CachedData = {
   lastFetched: 0,
 };
 
-const CACHE_TTL = 30000; // 30 seconds
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 export function useCachedData() {
   const [profile, setProfile] = useState<Profile | null>(cache.profile);
@@ -47,17 +47,17 @@ export function useCachedData() {
     fetchingRef.current = true;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
         setLoading(false);
         return;
       }
 
       // Parallel fetch all data
       const [profileResult, connectionsResult, meetingsResult] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', user.id).single(),
-        supabase.from('connections').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-        supabase.from('meetings').select('*').or(`user_id.eq.${user.id},organizer_id.eq.${user.id}`).order('meeting_date', { ascending: true }),
+        supabase.from('profiles').select('*').eq('id', session.user.id).single(),
+        supabase.from('connections').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false }),
+        supabase.from('meetings').select('*').or(`user_id.eq.${session.user.id},organizer_id.eq.${session.user.id}`).order('meeting_date', { ascending: true }),
       ]);
 
       // Update cache

@@ -27,12 +27,70 @@ const globalCache: AppCache = {
   isAuthenticated: false,
 };
 
-const CACHE_TTL = 60000; // 60 seconds
+// localStorage keys for instant mount data
+const LS_PROFILE_KEY = 'buizly_profile';
+const LS_CONNECTIONS_KEY = 'buizly_connections';
+const LS_MEETINGS_KEY = 'buizly_meetings';
+const LS_AUTH_KEY = 'buizly_authenticated';
+
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const listeners = new Set<() => void>();
 let authListenerSetup = false;
+let fetchInProgress = false;
 
 function notifyListeners() {
   listeners.forEach(listener => listener());
+}
+
+// Hydrate from localStorage for instant mount
+function hydrateFromStorage() {
+  if (globalCache.initialized) return;
+  
+  try {
+    const wasAuth = localStorage.getItem(LS_AUTH_KEY) === 'true';
+    if (!wasAuth) return;
+    
+    const storedProfile = localStorage.getItem(LS_PROFILE_KEY);
+    const storedConnections = localStorage.getItem(LS_CONNECTIONS_KEY);
+    const storedMeetings = localStorage.getItem(LS_MEETINGS_KEY);
+    
+    if (storedProfile) {
+      globalCache.profile = JSON.parse(storedProfile);
+      globalCache.isAuthenticated = true;
+      globalCache.userId = globalCache.profile?.id || null;
+    }
+    if (storedConnections) {
+      globalCache.connections = JSON.parse(storedConnections);
+    }
+    if (storedMeetings) {
+      globalCache.meetings = JSON.parse(storedMeetings);
+    }
+    
+    // Mark as initialized with stale data so UI renders instantly
+    if (globalCache.profile) {
+      globalCache.initialized = true;
+    }
+  } catch (e) {
+    console.warn('Cache hydration error:', e);
+  }
+}
+
+// Persist to localStorage for next app load
+function persistToStorage() {
+  try {
+    if (globalCache.profile) {
+      localStorage.setItem(LS_PROFILE_KEY, JSON.stringify(globalCache.profile));
+      localStorage.setItem(LS_AUTH_KEY, 'true');
+    }
+    if (globalCache.connections.length > 0) {
+      localStorage.setItem(LS_CONNECTIONS_KEY, JSON.stringify(globalCache.connections));
+    }
+    if (globalCache.meetings.length > 0) {
+      localStorage.setItem(LS_MEETINGS_KEY, JSON.stringify(globalCache.meetings));
+    }
+  } catch (e) {
+    console.warn('Cache persist error:', e);
+  }
 }
 
 // Clear cache completely
@@ -44,6 +102,15 @@ function clearCache() {
   globalCache.initialized = true;
   globalCache.lastFetched = 0;
   globalCache.isAuthenticated = false;
+  
+  // Clear localStorage
+  try {
+    localStorage.removeItem(LS_PROFILE_KEY);
+    localStorage.removeItem(LS_CONNECTIONS_KEY);
+    localStorage.removeItem(LS_MEETINGS_KEY);
+    localStorage.setItem(LS_AUTH_KEY, 'false');
+  } catch (e) {}
+  
   notifyListeners();
 }
 
@@ -51,23 +118,33 @@ function clearCache() {
 async function refreshCache(force = false) {
   const now = Date.now();
   
-  // Skip if cache is fresh and not forced
+  // Skip if cache is fresh and not forced, or if fetch is already in progress
   if (!force && globalCache.initialized && now - globalCache.lastFetched < CACHE_TTL) {
     return;
   }
+  
+  if (fetchInProgress) return;
+  fetchInProgress = true;
 
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      clearCache();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      if (!globalCache.initialized) {
+        globalCache.initialized = true;
+        notifyListeners();
+      }
+      fetchInProgress = false;
       return;
     }
 
+    const user = session.user;
+    
     // User is authenticated
     globalCache.isAuthenticated = true;
 
     // Only refetch if user changed or cache is stale
-    if (globalCache.userId === user.id && !force && globalCache.initialized) {
+    if (globalCache.userId === user.id && !force && globalCache.lastFetched > 0) {
+      fetchInProgress = false;
       return;
     }
 
@@ -85,9 +162,18 @@ async function refreshCache(force = false) {
     globalCache.initialized = true;
     globalCache.lastFetched = Date.now();
 
+    // Persist for instant load on next visit
+    persistToStorage();
     notifyListeners();
   } catch (error) {
     console.error('Cache refresh error:', error);
+    // Still mark as initialized so UI can render
+    if (!globalCache.initialized) {
+      globalCache.initialized = true;
+      notifyListeners();
+    }
+  } finally {
+    fetchInProgress = false;
   }
 }
 
@@ -157,6 +243,9 @@ export function useAppCache() {
 
 // Pre-warm cache on app load
 export function initializeAppCache() {
+  // First hydrate from localStorage for instant UI
+  hydrateFromStorage();
+  // Then setup auth listener and refresh in background
   setupAuthListener();
   refreshCache();
 }

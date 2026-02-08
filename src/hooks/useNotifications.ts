@@ -9,8 +9,9 @@ export function useNotifications() {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const user = session.user;
 
       const { data, error } = await supabase
         .from('notifications')
@@ -56,8 +57,9 @@ export function useNotifications() {
 
   const markAllAsRead = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const user = session.user;
 
       const { error } = await supabase
         .from('notifications')
@@ -119,21 +121,21 @@ export function useNotifications() {
     let userId: string | null = null;
     
     const setupSubscription = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      userId = user.id;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      userId = session.user.id;
       
       fetchNotifications();
 
       const channel = supabase
-        .channel(`notifications-${user.id}`)
+        .channel(`notifications-${session.user.id}`)
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
             table: 'notifications',
-            filter: `user_id=eq.${user.id}`
+            filter: `user_id=eq.${session.user.id}`
           },
           (payload) => {
             const newNotification = {
@@ -152,7 +154,7 @@ export function useNotifications() {
             event: 'UPDATE',
             schema: 'public',
             table: 'notifications',
-            filter: `user_id=eq.${user.id}`
+            filter: `user_id=eq.${session.user.id}`
           },
           (payload) => {
             const updated = {
@@ -177,7 +179,7 @@ export function useNotifications() {
             event: 'DELETE',
             schema: 'public',
             table: 'notifications',
-            filter: `user_id=eq.${user.id}`
+            filter: `user_id=eq.${session.user.id}`
           },
           (payload) => {
             const deletedId = (payload.old as any).id;

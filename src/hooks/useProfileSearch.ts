@@ -19,10 +19,10 @@ export function useProfileSearch() {
   const lastQueryRef = useRef<string>('');
   const pendingQueryRef = useRef<string | null>(null);
 
-  // Get current user on mount - immediate
+  // Get current user on mount - immediate (no network call)
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setCurrentUserId(user.id);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) setCurrentUserId(session.user.id);
     });
   }, []);
 
@@ -60,12 +60,12 @@ export function useProfileSearch() {
     try {
       let userId = currentUserId;
       if (!userId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
           setLoading(false);
           return;
         }
-        userId = user.id;
+        userId = session.user.id;
         setCurrentUserId(userId);
       }
 

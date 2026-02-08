@@ -8,8 +8,8 @@ export function useUserSettings() {
 
   const fetchSettings = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       // Use the secure RPC function that doesn't expose OAuth tokens
       const { data, error } = await supabase.rpc('get_user_settings_safe');
@@ -28,7 +28,7 @@ export function useUserSettings() {
         // Create default settings if none exist
         const { data: newSettings, error: insertError } = await supabase
           .from('user_settings')
-          .insert({ user_id: user.id })
+          .insert({ user_id: session.user.id })
           .select('id, user_id, onboarding_completed, email_notifications, push_notifications, google_calendar_connected, outlook_calendar_connected, profile_visibility, theme, ical_url, created_at, updated_at')
           .single();
 
@@ -48,13 +48,13 @@ export function useUserSettings() {
 
   const updateSettings = useCallback(async (updates: Partial<UserSettings>) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error('Not authenticated');
 
       const { error } = await supabase
         .from('user_settings')
         .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq('user_id', user.id);
+        .eq('user_id', session.user.id);
 
       if (error) throw error;
 
