@@ -39,15 +39,20 @@ export default function Notes() {
     return map;
   }, [events]);
 
-  // Load note if ID is provided
+  // Load note if ID is provided - re-runs when notes finish loading
   useEffect(() => {
     if (id && id !== 'new') {
       const note = getNote(id);
-      setSelectedNote(note);
+      if (note) {
+        setSelectedNote(note);
+      }
+      // If note is null, don't clear selectedNote - it may still be loading
     } else if (isNew) {
       setSelectedNote(null);
+    } else {
+      setSelectedNote(null);
     }
-  }, [id, isNew, getNote]);
+  }, [id, isNew, getNote, notes]);
 
   const handleSelectNote = useCallback((noteId: string) => {
     navigate(`/notes/${noteId}`);
