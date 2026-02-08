@@ -34,7 +34,18 @@ import NotFound from "./pages/NotFound";
 // Initialize cache immediately on app load
 initializeAppCache();
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh
+      gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache
+      refetchOnWindowFocus: false, // Don't refetch on tab switch
+      refetchOnMount: false, // Don't refetch if data is fresh
+      retry: 1, // Only retry once
+      refetchOnReconnect: true, // Refetch when reconnecting
+    },
+  },
+});
 
 function AppRoutes() {
   return (

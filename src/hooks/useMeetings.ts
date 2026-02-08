@@ -41,7 +41,7 @@ interface CreateMeetingData {
 
 export function useMeetings() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // Load from cache on mount
   useEffect(() => {
@@ -101,8 +101,9 @@ export function useMeetings() {
 
   const fetchMeetings = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const user = session.user;
 
       // Clean up past meetings first
       await cleanupPastMeetings(user.id);
@@ -131,8 +132,9 @@ export function useMeetings() {
 
   const createMeeting = useCallback(async (meetingData: CreateMeetingData) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error('Not authenticated');
+      const user = session.user;
 
       // Get organizer profile
       const { data: organizerProfile } = await supabase
@@ -446,8 +448,8 @@ export function useMeetings() {
     fetchMeetings();
 
     const setupRealtime = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return null;
 
       const channel = supabase
         .channel('meetings-realtime')

@@ -109,8 +109,8 @@ export function useSubscription() {
 
   const fetchSubscription = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
         setLoading(false);
         return;
       }
@@ -118,7 +118,7 @@ export function useSubscription() {
       const { data, error } = await supabase
         .from("subscriptions")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", session.user.id)
         .maybeSingle();
 
       if (error) throw error;
@@ -130,7 +130,7 @@ export function useSubscription() {
         const { data: newSub, error: insertError } = await supabase
           .from("subscriptions")
           .insert({
-            user_id: user.id,
+            user_id: session.user.id,
             plan: "free",
             status: "active",
           })
@@ -149,15 +149,15 @@ export function useSubscription() {
 
   const fetchUsage = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
 
       const { data, error } = await supabase
         .from("usage_tracking")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", session.user.id)
         .eq("month_year", currentMonth)
         .maybeSingle();
 
@@ -190,11 +190,11 @@ export function useSubscription() {
 
   const incrementConnectionCount = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       const { data, error } = await supabase.rpc("increment_connection_count", {
-        p_user_id: user.id,
+        p_user_id: session.user.id,
       });
 
       if (error) throw error;

@@ -21,8 +21,9 @@ export function useRealtimeSubscription(options: RealtimeOptions = {}) {
   const userIdRef = useRef<string | null>(null);
 
   const setupRealtimeChannel = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+    const user = session.user;
     
     userIdRef.current = user.id;
 

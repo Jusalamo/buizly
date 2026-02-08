@@ -40,8 +40,9 @@ export function usePlugs() {
 
   const fetchPlugs = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const user = session.user;
 
       // Fetch plugs I sent
       const { data: sent, error: sentError } = await supabase
@@ -138,8 +139,9 @@ export function usePlugs() {
 
   const createPlug = useCallback(async (connectionIds: string[], message?: string) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error('Not authenticated');
+      const user = session.user;
 
       if (connectionIds.length < 2) {
         throw new Error('At least 2 contacts are required');
@@ -266,8 +268,9 @@ export function usePlugs() {
 
   const respondToPlug = useCallback(async (plugId: string, accept: boolean) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error('Not authenticated');
+      const user = session.user;
 
       const { error } = await supabase
         .from('plug_participants')

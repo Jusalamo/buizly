@@ -60,8 +60,9 @@ export function useNotificationsOptimistic() {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const user = session.user;
       
       userIdRef.current = user.id;
 
@@ -119,8 +120,9 @@ export function useNotificationsOptimistic() {
     updateGlobalState(updatedNotifications);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const user = session.user;
 
       const { error } = await supabase
         .from('notifications')
@@ -185,8 +187,9 @@ export function useNotificationsOptimistic() {
     fetchNotifications();
 
     const setupChannel = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const user = session.user;
 
       userIdRef.current = user.id;
 

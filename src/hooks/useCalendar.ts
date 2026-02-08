@@ -33,7 +33,7 @@ function saveToCache<T>(key: string, data: T): void {
 export function useCalendar() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [calendars, setCalendars] = useState<UserCalendar[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<CalendarView>('week');
   const [syncing, setSyncing] = useState(false);
@@ -69,15 +69,15 @@ export function useCalendar() {
 
   const fetchEvents = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       const { start, end } = getDateRange(currentDate, view);
 
       const { data, error } = await supabase
         .from('calendar_events')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', session.user.id)
         .gte('start_time', start.toISOString())
         .lte('start_time', end.toISOString())
         .order('start_time', { ascending: true });
@@ -104,13 +104,13 @@ export function useCalendar() {
 
   const fetchCalendars = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       const { data, error } = await supabase
         .from('user_calendars')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', session.user.id)
         .order('is_primary', { ascending: false });
 
       if (error) throw error;
@@ -125,8 +125,9 @@ export function useCalendar() {
 
   const createEvent = useCallback(async (eventData: Partial<CalendarEvent>) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error('Not authenticated');
+      const user = session.user;
 
       // Optimistic update - add temp event immediately
       const tempId = `temp-${Date.now()}`;
