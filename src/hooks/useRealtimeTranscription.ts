@@ -18,10 +18,13 @@ export function useRealtimeTranscription() {
   const [fullTranscript, setFullTranscript] = useState('');
   const { toast } = useToast();
   const segmentIdRef = useRef(0);
+  const partialTextRef = useRef('');
+  const fullTranscriptRef = useRef('');
 
   const scribe = useScribe({
     modelId: 'scribe_v2_realtime',
     onPartialTranscript: (data) => {
+      partialTextRef.current = data.text;
       setPartialText(data.text);
     },
     onCommittedTranscript: (data) => {
@@ -31,7 +34,12 @@ export function useRealtimeTranscription() {
         timestamp: Date.now(),
       };
       setSegments(prev => [...prev, newSegment]);
-      setFullTranscript(prev => prev + (prev ? ' ' : '') + data.text);
+      setFullTranscript(prev => {
+        const updated = prev + (prev ? ' ' : '') + data.text;
+        fullTranscriptRef.current = updated;
+        return updated;
+      });
+      partialTextRef.current = '';
       setPartialText('');
     },
   });
@@ -79,17 +87,37 @@ export function useRealtimeTranscription() {
 
   const stopTranscription = useCallback(async () => {
     try {
+      // Capture any remaining partial text before disconnecting
+      const remainingPartial = partialTextRef.current.trim();
+      
       await scribe.disconnect();
+      
+      // Append any uncommitted partial text to the full transcript
+      if (remainingPartial) {
+        setFullTranscript(prev => {
+          const updated = prev + (prev ? ' ' : '') + remainingPartial;
+          fullTranscriptRef.current = updated;
+          return updated;
+        });
+        const newSegment: TranscriptionSegment = {
+          id: `segment-${segmentIdRef.current++}`,
+          text: remainingPartial,
+          timestamp: Date.now(),
+        };
+        setSegments(prev => [...prev, newSegment]);
+      }
+      
       setIsConnected(false);
+      partialTextRef.current = '';
       setPartialText('');
       toast({
         title: 'Transcription stopped',
-        description: `Captured ${segments.length} segments`,
+        description: 'Transcript added to your note',
       });
     } catch (error) {
       console.error('Error stopping transcription:', error);
     }
-  }, [scribe, segments.length, toast]);
+  }, [scribe, toast]);
 
   const clearTranscription = useCallback(() => {
     setSegments([]);
