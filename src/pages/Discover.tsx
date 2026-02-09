@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Search, UserPlus, Users, Building, ArrowRight, Check, X, Clock, UserCheck, Lock } from "lucide-react";
+import { Search, UserPlus, Users, Building, ArrowRight, Check, X, Clock, UserCheck, Lock, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
@@ -27,6 +27,8 @@ export default function Discover() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"search" | "requests" | "manual">("search");
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+  const [processingAction, setProcessingAction] = useState<'accept' | 'decline' | null>(null);
   const { toast } = useToast();
   
   const { 
@@ -60,6 +62,28 @@ export default function Discover() {
       clearResults();
     }
   }, [searchQuery, search, clearResults]);
+
+  const handleAcceptRequest = async (requestId: string) => {
+    setProcessingRequestId(requestId);
+    setProcessingAction('accept');
+    try {
+      await acceptRequest(requestId);
+    } finally {
+      setProcessingRequestId(null);
+      setProcessingAction(null);
+    }
+  };
+
+  const handleDeclineRequest = async (requestId: string) => {
+    setProcessingRequestId(requestId);
+    setProcessingAction('decline');
+    try {
+      await declineRequest(requestId);
+    } finally {
+      setProcessingRequestId(null);
+      setProcessingAction(null);
+    }
+  };
 
   const handleSendRequest = async (targetProfile: SearchableProfile) => {
     const result = await sendRequest(targetProfile.id);
@@ -406,19 +430,29 @@ export default function Discover() {
                         </div>
                         <div className="flex gap-1.5">
                           <Button
-                            onClick={() => acceptRequest(request.id)}
+                            onClick={() => handleAcceptRequest(request.id)}
                             size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-white h-8 px-3"
+                            disabled={processingRequestId === request.id}
+                            className="bg-green-600 hover:bg-green-500 active:bg-green-700 active:scale-95 transition-all text-white h-8 px-3"
                           >
-                            <Check className="h-4 w-4" />
+                            {processingRequestId === request.id && processingAction === 'accept' ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Check className="h-4 w-4" />
+                            )}
                           </Button>
                           <Button
-                            onClick={() => declineRequest(request.id)}
+                            onClick={() => handleDeclineRequest(request.id)}
                             size="sm"
                             variant="outline"
-                            className="border-destructive/50 text-destructive hover:bg-destructive/10 h-8 px-3"
+                            disabled={processingRequestId === request.id}
+                            className="border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground active:scale-95 transition-all h-8 px-3"
                           >
-                            <X className="h-4 w-4" />
+                            {processingRequestId === request.id && processingAction === 'decline' ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <X className="h-4 w-4" />
+                            )}
                           </Button>
                         </div>
                       </div>

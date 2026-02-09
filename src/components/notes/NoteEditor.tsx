@@ -57,6 +57,7 @@ export function NoteEditor({
   const [showTranscription, setShowTranscription] = useState(false);
   const [showCalendarLink, setShowCalendarLink] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const lastAppendedTranscriptRef = useRef<string>('');
 
   // Sync local state when note prop updates (handles async loading)
   useEffect(() => {
@@ -125,6 +126,7 @@ export function NoteEditor({
           title: title || null,
           text_note: content || null,
           is_pinned: isPinned,
+          transcript: transcription.fullTranscript || note?.transcript,
         });
         setLastSaved(new Date());
         setHasChanges(false);
@@ -140,13 +142,20 @@ export function NoteEditor({
     };
   }, [hasChanges, title, content, isPinned, note?.id, isNew, onSave]);
 
-  // Append transcription to content
+  // Append transcription to content when recording stops
   useEffect(() => {
-    if (transcription.fullTranscript && !transcription.isConnected) {
+    if (
+      transcription.fullTranscript &&
+      !transcription.isConnected &&
+      transcription.fullTranscript !== lastAppendedTranscriptRef.current
+    ) {
+      lastAppendedTranscriptRef.current = transcription.fullTranscript;
       setContent(prev => {
-        if (prev.includes(transcription.fullTranscript)) return prev;
-        return prev + (prev ? '\n\n---\n\n' : '') + transcription.fullTranscript;
+        const separator = prev.trim() ? '\n\n---\n\n' : '';
+        return prev + separator + transcription.fullTranscript;
       });
+      // Switch back to editor view so user sees the appended text
+      setShowTranscription(false);
     }
   }, [transcription.fullTranscript, transcription.isConnected]);
 
