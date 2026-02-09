@@ -1,142 +1,186 @@
 
 
-# Fix Notes Disappearing on Click & Add "Create Event" to Calendar Link Modal
+# Fix Transcription Saving & Improve Request Button Feedback
 
-## Problems Identified
+## Issue 1: Transcription Not Saved to Note
 
-### Problem 1: Notes disappear when clicking to view them
-When a user clicks on a note card and navigates to `/notes/:id`, the note editor opens blank because of a **timing/sync issue**:
-
-1. In `Notes.tsx` (line 43-50), the `useEffect` calls `getNote(id)` which searches the `notes` array in memory
-2. `getNote` depends on the `notes` state from `useMeetingNotes`, but when navigating to a new route, the component remounts and `notes` may still be loading from the database
-3. Even if `getNote` eventually finds the note (after fetch completes), the `NoteEditor` only reads the `note` prop **once** via `useState` initial values (lines 54-56):
-   ```typescript
-   const [title, setTitle] = useState(note?.title || '');
-   const [content, setContent] = useState(note?.text_note || '');
-   ```
-   So if the note is `null` initially and becomes available later, the editor still shows empty fields
-
-**Root cause**: No synchronization between when `notes` data loads and when the editor initializes its state from the `note` prop.
-
-### Problem 2: No option to create a calendar event from the link modal
-When the `CalendarLinkModal` shows "No upcoming events found" (line 135-139), there is no button to create a new event. Users are stuck with no way to link their note to the calendar.
-
----
-
-## Solution
-
-### Fix 1: Sync note data into editor when it loads
-  ensure to remove the magic note summary it is not currnently necessary 
-**File: `src/pages/Notes.tsx`**
-
-- Update the `useEffect` that loads the note to also react to changes in `notes` array (not just `id` and `getNote`)
-- When `notes` finishes loading and the note is found, update `selectedNote` so the editor gets the data
-
-**File: `src/components/notes/NoteEditor.tsx`**
-
-- Add a `useEffect` that watches the `note` prop and syncs local state when it changes from `null` to a real note object
-- This ensures that even if the note loads asynchronously, the editor updates its title/content fields
+### Root Cause
+In `NoteEditor.tsx` (lines 143-151), the effect that appends the transcription to the note content has a logic flaw:
 
 ```typescript
-// Sync state when note prop changes (e.g., after async load)
 useEffect(() => {
-  if (note) {
-    setTitle(note.title || '');
-    setContent(note.text_note || '');
-    setIsPinned(note.is_pinned || false);
+  if (transcription.fullTranscript && !transcription.isConnected) {
+    setContent(prev => {
+      if (prev.includes(transcription.fullTranscript)) return prev;
+      return prev + (prev ? '\n\n---\n\n' : '') + transcription.fullTranscript;
+    });
   }
-}, [note?.id]); // Only re-sync when we get a different note
+}, [transcription.fullTranscript, transcription.isConnected]);
 ```
 
-### Fix 2: Add "Create Event & Link" option to CalendarLinkModal
+**Problem 1**: The `prev.includes(transcription.fullTranscript)` check is fragile. Since `fullTranscript` builds incrementally during recording (e.g., "Hello" then "Hello world"), partial matches can cause false positives, preventing the final transcript from being appended.
 
-**File: `src/components/notes/CalendarLinkModal.tsx`**
+**Problem 2**: When the user stops recording, `isConnected` becomes `false` and the effect runs once. But the `showTranscription` panel stays open, so the user doesn't see the editor. When they toggle back, the auto-save may have already fired with the old content. Additionally, the auto-save (lines 112-141) does NOT include the `transcript` field -- it only saves `title`, `text_note`, and `is_pinned`. So while the transcript text may get appended to `text_note`, the dedicated `transcript` column is never updated by auto-save.
 
-- Add a "Create New Event" button that appears always (not just when empty)
-- When clicked, navigate to the Calendar page or open a quick event creation form
-- Pass a callback so the note gets linked after the event is created
+**Problem 3**: For new notes, auto-save is disabled entirely (`if (!hasChanges || isNew) return`). The transcript is appended to `content` state, but the user must manually click "Create Note." If they click it before the effect runs (or if the effect's `includes` check blocks it), the transcript is lost.
 
-**File: `src/pages/Notes.tsx`**
+### Fix
 
-- Add a handler for creating a new event and linking it to the current note
+1. **Auto-switch back to editor view when recording stops** -- so the user sees the transcript appended to their content immediately
+2. **Use a ref to track the last appended transcript** instead of `prev.includes()` to avoid false-positive duplicate detection
+3. **Include `transcript` in auto-save** so the dedicated transcript column also gets saved
+4. **Trigger a save after transcript append** to persist it immediately
+
+### Files to Change
+- `src/components/notes/NoteEditor.tsx`
 
 ---
 
-## Technical Details
+## Issue 2: Request Accept/Decline Buttons Have No Visual Feedback
+
+### Root Cause
+In `Discover.tsx` (lines 408-422), the Accept and Decline buttons for connection requests have no loading or disabled state:
+
+```tsx
+<Button onClick={() => acceptRequest(request.id)} size="sm" className="bg-green-600 ...">
+  <Check className="h-4 w-4" />
+</Button>
+<Button onClick={() => declineRequest(request.id)} size="sm" variant="outline" className="border-destructive/50 ...">
+  <X className="h-4 w-4" />
+</Button>
+```
+
+Both `acceptRequest` and `declineRequest` in `useConnectionRequests.ts` are async operations that make multiple database calls and API requests. During this time:
+- No loading spinner is shown
+- Buttons remain clickable, so users press multiple times
+- No visual distinction for active/hover states beyond default
+
+### Fix
+
+1. **Add per-request loading state** in `Discover.tsx` to track which request is being processed
+2. **Disable both buttons** while an action is in progress on that specific request
+3. **Show a spinner** on the active button (accept or decline) during processing
+4. **Improve hover states** with distinct colors: green hover for accept, red hover for decline
+5. **Add optimistic UI removal** -- remove the request card immediately from the list while the async action completes in the background
+
+### Files to Change
+- `src/pages/Discover.tsx`
+
+---
+
+## Detailed Technical Changes
 
 ### NoteEditor.tsx Changes
-Add a sync effect after the existing state declarations (around line 56):
 
 ```typescript
-// Sync local state when note prop updates (handles async loading)
+// 1. Add a ref to track the last transcript we appended
+const lastAppendedTranscriptRef = useRef<string>('');
+
+// 2. Replace the existing "Append transcription to content" effect
 useEffect(() => {
-  if (note) {
-    setTitle(note.title || '');
-    setContent(note.text_note || '');
-    setIsPinned(note.is_pinned || false);
-    setHasChanges(false);
+  if (
+    transcription.fullTranscript &&
+    !transcription.isConnected &&
+    transcription.fullTranscript !== lastAppendedTranscriptRef.current
+  ) {
+    lastAppendedTranscriptRef.current = transcription.fullTranscript;
+    setContent(prev => {
+      const separator = prev.trim() ? '\n\n---\n\n' : '';
+      return prev + separator + transcription.fullTranscript;
+    });
+    // Switch back to editor view so user sees the appended text
+    setShowTranscription(false);
   }
-}, [note?.id]);
+}, [transcription.fullTranscript, transcription.isConnected]);
+
+// 3. Include transcript in auto-save
+// In the auto-save effect, add transcript to the save payload:
+await onSave({
+  id: note?.id,
+  title: title || null,
+  text_note: content || null,
+  is_pinned: isPinned,
+  transcript: transcription.fullTranscript || note?.transcript,
+});
 ```
 
-This effect:
-- Only triggers when a **different** note loads (keyed on `note?.id`)
-- Resets local state to match the loaded note
-- Resets `hasChanges` to prevent auto-save from firing immediately
-
-### Notes.tsx Changes
-Update the `useEffect` that loads the selected note to properly handle the async nature:
+### Discover.tsx Changes
 
 ```typescript
-useEffect(() => {
-  if (id && id !== 'new') {
-    const note = getNote(id);
-    if (note) {
-      setSelectedNote(note);
-    }
-    // If note is null, don't clear selectedNote - it may still be loading
-  } else if (isNew) {
-    setSelectedNote(null);
-  } else {
-    setSelectedNote(null);
+// 1. Add processing state
+const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+const [processingAction, setProcessingAction] = useState<'accept' | 'decline' | null>(null);
+
+// 2. Wrap accept/decline handlers
+const handleAcceptRequest = async (requestId: string) => {
+  setProcessingRequestId(requestId);
+  setProcessingAction('accept');
+  try {
+    await acceptRequest(requestId);
+  } finally {
+    setProcessingRequestId(null);
+    setProcessingAction(null);
   }
-}, [id, isNew, getNote, notes]); // Add notes dependency
+};
+
+const handleDeclineRequest = async (requestId: string) => {
+  setProcessingRequestId(requestId);
+  setProcessingAction('decline');
+  try {
+    await declineRequest(requestId);
+  } finally {
+    setProcessingRequestId(null);
+    setProcessingAction(null);
+  }
+};
+
+// 3. Update button rendering with loading/disabled states
+<Button
+  onClick={() => handleAcceptRequest(request.id)}
+  size="sm"
+  disabled={processingRequestId === request.id}
+  className="bg-green-600 hover:bg-green-500 active:bg-green-700 
+             active:scale-95 transition-all text-white h-8 px-3"
+>
+  {processingRequestId === request.id && processingAction === 'accept' ? (
+    <Loader2 className="h-4 w-4 animate-spin" />
+  ) : (
+    <Check className="h-4 w-4" />
+  )}
+</Button>
+
+<Button
+  onClick={() => handleDeclineRequest(request.id)}
+  size="sm"
+  variant="outline"
+  disabled={processingRequestId === request.id}
+  className="border-destructive/50 text-destructive 
+             hover:bg-destructive hover:text-destructive-foreground 
+             active:scale-95 transition-all h-8 px-3"
+>
+  {processingRequestId === request.id && processingAction === 'decline' ? (
+    <Loader2 className="h-4 w-4 animate-spin" />
+  ) : (
+    <X className="h-4 w-4" />
+  )}
+</Button>
 ```
-
-Add `notes` to the dependency array so the effect re-runs when notes finish loading from the database.
-
-### CalendarLinkModal.tsx Changes
-Add a "Create New Event" button at the bottom of the modal:
-
-```typescript
-{/* Always show create event option */}
-<div className="pt-2 border-t border-border">
-  <Button
-    variant="outline"
-    className="w-full gap-2"
-    onClick={handleCreateEvent}
-  >
-    <Plus className="h-4 w-4" />
-    Create New Event & Link
-  </Button>
-</div>
-```
-
-Add a new prop `onCreateAndLink` to the modal interface, and a simple inline event creation form with:
-- Event title (pre-filled with note title)
-- Date and time picker
-- A "Create & Link" button that creates the event via `useCalendar().createEvent()` and then calls `onLinkEvent` with the new event ID
 
 ---
 
 ## Files to Modify
 
-1. **`src/components/notes/NoteEditor.tsx`** - Add `useEffect` to sync state when note prop changes
-2. **`src/pages/Notes.tsx`** - Fix note loading dependency, add create-and-link handler
-3. **`src/components/notes/CalendarLinkModal.tsx`** - Add inline event creation form with "Create New Event & Link" button
+1. **`src/components/notes/NoteEditor.tsx`**
+   - Add `lastAppendedTranscriptRef` to prevent duplicate appends
+   - Fix transcript append effect with reliable dedup
+   - Auto-switch from transcription panel to editor after recording stops
+   - Include `transcript` field in auto-save payload
 
-## Implementation Order
+2. **`src/pages/Discover.tsx`**
+   - Add `processingRequestId` and `processingAction` state
+   - Wrap `acceptRequest`/`declineRequest` with loading handlers
+   - Add `Loader2` import
+   - Update Accept button with spinner, disabled state, and green hover
+   - Update Decline button with spinner, disabled state, and red hover
+   - Add `active:scale-95` press feedback to both buttons
 
-1. Fix `NoteEditor.tsx` state sync (resolves disappearing notes)
-2. Fix `Notes.tsx` loading dependency (ensures note data is found after fetch)
-3. Add create event form to `CalendarLinkModal.tsx` (enables linking even with no existing events)
