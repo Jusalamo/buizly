@@ -1,186 +1,154 @@
 
 
-# Fix Transcription Saving & Improve Request Button Feedback
+# Plug Visibility, Connection Flow, Privacy, Business Card, QR Scan & Speaker Diarization
 
-## Issue 1: Transcription Not Saved to Note
-
-### Root Cause
-In `NoteEditor.tsx` (lines 143-151), the effect that appends the transcription to the note content has a logic flaw:
-
-```typescript
-useEffect(() => {
-  if (transcription.fullTranscript && !transcription.isConnected) {
-    setContent(prev => {
-      if (prev.includes(transcription.fullTranscript)) return prev;
-      return prev + (prev ? '\n\n---\n\n' : '') + transcription.fullTranscript;
-    });
-  }
-}, [transcription.fullTranscript, transcription.isConnected]);
-```
-
-**Problem 1**: The `prev.includes(transcription.fullTranscript)` check is fragile. Since `fullTranscript` builds incrementally during recording (e.g., "Hello" then "Hello world"), partial matches can cause false positives, preventing the final transcript from being appended.
-
-**Problem 2**: When the user stops recording, `isConnected` becomes `false` and the effect runs once. But the `showTranscription` panel stays open, so the user doesn't see the editor. When they toggle back, the auto-save may have already fired with the old content. Additionally, the auto-save (lines 112-141) does NOT include the `transcript` field -- it only saves `title`, `text_note`, and `is_pinned`. So while the transcript text may get appended to `text_note`, the dedicated `transcript` column is never updated by auto-save.
-
-**Problem 3**: For new notes, auto-save is disabled entirely (`if (!hasChanges || isNew) return`). The transcript is appended to `content` state, but the user must manually click "Create Note." If they click it before the effect runs (or if the effect's `includes` check blocks it), the transcript is lost.
-
-### Fix
-
-1. **Auto-switch back to editor view when recording stops** -- so the user sees the transcript appended to their content immediately
-2. **Use a ref to track the last appended transcript** instead of `prev.includes()` to avoid false-positive duplicate detection
-3. **Include `transcript` in auto-save** so the dedicated transcript column also gets saved
-4. **Trigger a save after transcript append** to persist it immediately
-
-### Files to Change
-- `src/components/notes/NoteEditor.tsx`
+This plan addresses multiple interconnected improvements across the app.
 
 ---
 
-## Issue 2: Request Accept/Decline Buttons Have No Visual Feedback
+## 1. Plugs: Both Participants See Who They're Being Introduced To
 
-### Root Cause
-In `Discover.tsx` (lines 408-422), the Accept and Decline buttons for connection requests have no loading or disabled state:
+**Current state**: When Person C introduces Person A and Person B, each participant can only see themselves and the "other" person. They cannot see the full picture of who is involved.
 
-```tsx
-<Button onClick={() => acceptRequest(request.id)} size="sm" className="bg-green-600 ...">
-  <Check className="h-4 w-4" />
-</Button>
-<Button onClick={() => declineRequest(request.id)} size="sm" variant="outline" className="border-destructive/50 ...">
-  <X className="h-4 w-4" />
-</Button>
-```
+**Fix**: Update `PlugsList.tsx` and `PlugIntroduction.tsx` to show all participants to each recipient. When Person A views the plug, they see: "Person C wants to introduce you to Person B" (with Person B's profile details visible). Person B sees the same but with Person A's details.
 
-Both `acceptRequest` and `declineRequest` in `useConnectionRequests.ts` are async operations that make multiple database calls and API requests. During this time:
-- No loading spinner is shown
-- Buttons remain clickable, so users press multiple times
-- No visual distinction for active/hover states beyond default
-
-### Fix
-
-1. **Add per-request loading state** in `Discover.tsx` to track which request is being processed
-2. **Disable both buttons** while an action is in progress on that specific request
-3. **Show a spinner** on the active button (accept or decline) during processing
-4. **Improve hover states** with distinct colors: green hover for accept, red hover for decline
-5. **Add optimistic UI removal** -- remove the request card immediately from the list while the async action completes in the background
-
-### Files to Change
-- `src/pages/Discover.tsx`
+### Changes:
+- **`src/components/PlugsList.tsx`**: In the "received" plug visualization, show all other participants with their full profile info (name, avatar, job title, company) instead of just avatars.
+- **`src/hooks/usePlugs.ts`**: Ensure the `respondToPlug` function, when both participants accept, triggers a mutual connection creation via a new RPC function.
 
 ---
 
-## Detailed Technical Changes
+## 2. Clear/Delete Introductions
 
-### NoteEditor.tsx Changes
+**Current state**: There is no way to clear/remove a plug introduction, especially if no one acted on it.
 
-```typescript
-// 1. Add a ref to track the last transcript we appended
-const lastAppendedTranscriptRef = useRef<string>('');
+**Fix**: Add a delete/clear action to both sent and received plugs.
 
-// 2. Replace the existing "Append transcription to content" effect
-useEffect(() => {
-  if (
-    transcription.fullTranscript &&
-    !transcription.isConnected &&
-    transcription.fullTranscript !== lastAppendedTranscriptRef.current
-  ) {
-    lastAppendedTranscriptRef.current = transcription.fullTranscript;
-    setContent(prev => {
-      const separator = prev.trim() ? '\n\n---\n\n' : '';
-      return prev + separator + transcription.fullTranscript;
-    });
-    // Switch back to editor view so user sees the appended text
-    setShowTranscription(false);
-  }
-}, [transcription.fullTranscript, transcription.isConnected]);
-
-// 3. Include transcript in auto-save
-// In the auto-save effect, add transcript to the save payload:
-await onSave({
-  id: note?.id,
-  title: title || null,
-  text_note: content || null,
-  is_pinned: isPinned,
-  transcript: transcription.fullTranscript || note?.transcript,
-});
-```
-
-### Discover.tsx Changes
-
-```typescript
-// 1. Add processing state
-const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
-const [processingAction, setProcessingAction] = useState<'accept' | 'decline' | null>(null);
-
-// 2. Wrap accept/decline handlers
-const handleAcceptRequest = async (requestId: string) => {
-  setProcessingRequestId(requestId);
-  setProcessingAction('accept');
-  try {
-    await acceptRequest(requestId);
-  } finally {
-    setProcessingRequestId(null);
-    setProcessingAction(null);
-  }
-};
-
-const handleDeclineRequest = async (requestId: string) => {
-  setProcessingRequestId(requestId);
-  setProcessingAction('decline');
-  try {
-    await declineRequest(requestId);
-  } finally {
-    setProcessingRequestId(null);
-    setProcessingAction(null);
-  }
-};
-
-// 3. Update button rendering with loading/disabled states
-<Button
-  onClick={() => handleAcceptRequest(request.id)}
-  size="sm"
-  disabled={processingRequestId === request.id}
-  className="bg-green-600 hover:bg-green-500 active:bg-green-700 
-             active:scale-95 transition-all text-white h-8 px-3"
->
-  {processingRequestId === request.id && processingAction === 'accept' ? (
-    <Loader2 className="h-4 w-4 animate-spin" />
-  ) : (
-    <Check className="h-4 w-4" />
-  )}
-</Button>
-
-<Button
-  onClick={() => handleDeclineRequest(request.id)}
-  size="sm"
-  variant="outline"
-  disabled={processingRequestId === request.id}
-  className="border-destructive/50 text-destructive 
-             hover:bg-destructive hover:text-destructive-foreground 
-             active:scale-95 transition-all h-8 px-3"
->
-  {processingRequestId === request.id && processingAction === 'decline' ? (
-    <Loader2 className="h-4 w-4 animate-spin" />
-  ) : (
-    <X className="h-4 w-4" />
-  )}
-</Button>
-```
+### Changes:
+- **`src/hooks/usePlugs.ts`**: Add a `deletePlug` function that:
+  - For sent plugs: deletes the plug and all participants
+  - For received plugs: removes the current user's participant record (effectively hiding it)
+- **`src/components/PlugsList.tsx`**: Add a trash/clear button on each plug card with confirmation
 
 ---
 
-## Files to Modify
+## 3. Mutual Connection on Plug Accept
 
-1. **`src/components/notes/NoteEditor.tsx`**
-   - Add `lastAppendedTranscriptRef` to prevent duplicate appends
-   - Fix transcript append effect with reliable dedup
-   - Auto-switch from transcription panel to editor after recording stops
-   - Include `transcript` field in auto-save payload
+**Current state**: When a participant accepts a plug, their status updates to "accepted" but no actual connection is created between participants.
 
-2. **`src/pages/Discover.tsx`**
-   - Add `processingRequestId` and `processingAction` state
-   - Wrap `acceptRequest`/`declineRequest` with loading handlers
-   - Add `Loader2` import
-   - Update Accept button with spinner, disabled state, and green hover
-   - Update Decline button with spinner, disabled state, and red hover
-   - Add `active:scale-95` press feedback to both buttons
+**Fix**: When ALL participants of a plug have accepted, automatically create mutual connections between them using the existing `accept_connection_request` pattern.
+
+### Changes:
+- **`src/hooks/usePlugs.ts`**: After `respondToPlug` succeeds with `accept=true`, check if all participants have accepted. If yes, create bidirectional connections between all participants by inserting into the `connections` table for each pair.
+- Add notifications to each participant confirming the new connections.
+
+---
+
+## 4. Private Profile Visibility Fix
+
+**Current state**: The Settings page has a profile visibility selector (Public/Connections/Private) that saves to the database. However, the `PublicProfile.tsx` page already handles private visibility by showing only name and avatar. The issue is that when set to "private," it should also show the user's company/business but hide contact info (email, phone).
+
+**Fix**: Update the private profile view to show name, avatar, AND company/job title, but hide contact details.
+
+### Changes:
+- **`src/pages/PublicProfile.tsx`**: Update the private profile view (lines 196-218) to also fetch and display `job_title` and `company` from the public profile RPC. Update the `get_public_profile_safe` data display to include these fields.
+- **`src/hooks/useProfileSearch.ts`**: Ensure private profiles in search results show name and company but no contact info (already partially done with `isPrivate` flag).
+
+---
+
+## 5. Business Card View for QR Code Scans
+
+**Current state**: When someone scans a QR code, they see a full profile page (`PublicProfile.tsx`) with a social media-like layout. The user wants a proper business card layout instead.
+
+**Fix**: Redesign the `PublicProfile.tsx` to render as a digital business card when accessed via QR scan. The card should display:
+- Profile photo and business logo
+- Name, job title, company
+- Phone, email
+- Arranged in a business card layout (compact, professional)
+
+### Changes:
+- **`src/pages/PublicProfile.tsx`**: Redesign the main profile display to use a business card layout:
+  - Horizontal card-like container with profile photo on the left
+  - Name, title, company stacked on the right
+  - Contact details (phone, email) displayed below in a clean row
+  - Keep the "Save Contact" and "Open App" buttons below the card
+  - Remove the social media-style vertical layout
+
+---
+
+## 6. Remove Requests Tab from Add Page
+
+**Current state**: The Discover page has three tabs: Find, Requests, Manual. Connection requests should only appear in notifications.
+
+**Fix**: Remove the "Requests" tab entirely from `Discover.tsx`. Connection request notifications (accept/decline/new request) will be handled through the existing notification system.
+
+### Changes:
+- **`src/pages/Discover.tsx`**: 
+  - Remove the "Requests" tab trigger and content (lines 186-197 and 367-529)
+  - Change grid from `grid-cols-3` to `grid-cols-2`
+  - Remove the request count badge
+  - Remove `processingRequestId`, `processingAction` state and handlers
+  - Remove `useConnectionRequests` import (unless needed for `getRequestStatus` in search)
+  - Keep `getRequestStatus` and `sendRequest` for the Find tab
+- **`src/components/BottomNav.tsx`**: Update the notification count for "Add" tab -- remove `incomingRequests.length` since requests now only show in notifications.
+
+---
+
+## 7. QR Code Scanner for Connection Requests
+
+**Current state**: The "Quick Scan" or camera functionality should scan QR codes and create connection requests based on the scanned user's profile.
+
+**Fix**: The QR scan flow should: scan QR code -> extract user ID from the URL -> send a connection request to that user.
+
+### Changes:
+- **`src/pages/Discover.tsx`** or a new scanner component: Add a "Scan QR" button that opens the device camera, reads a QR code URL (e.g., `buizly.lovable.app/u/{userId}`), extracts the userId, and calls `sendRequest(userId)` to send a connection request. If already connected, show a toast.
+- This uses the browser's native `BarcodeDetector` API or a lightweight QR scanning library.
+
+---
+
+## 8. Speaker Diarization in Transcription
+
+**Current state**: The realtime transcription uses `useScribe` with `scribe_v2_realtime` model but does not support speaker diarization (realtime Scribe does not have a `num_speakers` parameter -- that is only available for batch transcription).
+
+**Fix**: Since the `scribe_v2_realtime` model does NOT support speaker diarization natively, we will:
+1. Add a speaker count selector to the transcription UI
+2. After recording stops, send the recorded audio to the **batch** transcription API (`scribe_v2`) with `enable_speaker_diarization=true` and `num_speakers` set
+3. Replace the realtime segments with the diarized result, showing speaker labels
+
+### Changes:
+- **`src/components/notes/NoteEditor.tsx`**: Add a speaker count selector (1-6) near the transcribe button
+- **`src/components/notes/TranscriptionPanel.tsx`**: Add speaker count selector UI, pass the value up
+- **`src/hooks/useRealtimeTranscription.ts`**: After stopping, if speaker count > 1, collect the audio and send to a new batch transcription edge function
+- **`supabase/functions/elevenlabs-transcribe/index.ts`** (new): Create batch transcription endpoint that accepts audio + speaker count, calls ElevenLabs batch STT API with diarization enabled, returns speaker-labeled transcript
+- **`src/components/notes/TranscriptionPanel.tsx`**: Display speaker labels (e.g., "Speaker 1", "Speaker 2") on each segment
+
+---
+
+## Technical Details
+
+### Files to Create:
+1. `supabase/functions/elevenlabs-transcribe/index.ts` -- Batch transcription with diarization
+
+### Files to Modify:
+1. `src/components/PlugsList.tsx` -- Show full participant details, add delete button
+2. `src/hooks/usePlugs.ts` -- Add `deletePlug`, mutual connection creation on all-accept
+3. `src/pages/PublicProfile.tsx` -- Business card layout, private profile shows company
+4. `src/pages/Discover.tsx` -- Remove Requests tab, add QR scan button
+5. `src/components/BottomNav.tsx` -- Update Add tab badge count
+6. `src/components/notes/NoteEditor.tsx` -- Speaker count selector
+7. `src/components/notes/TranscriptionPanel.tsx` -- Speaker count UI, speaker labels
+8. `src/hooks/useRealtimeTranscription.ts` -- Post-recording batch diarization flow
+
+### Database Changes:
+- New RPC function `complete_plug_connections` that creates mutual connections between all accepted plug participants
+
+### Implementation Order:
+1. Remove Requests tab from Discover (simplest, reduces code)
+2. Fix private profile visibility (show name + company)
+3. Redesign PublicProfile as business card
+4. Plug participant visibility fix
+5. Plug delete/clear functionality
+6. Mutual connection on plug accept
+7. QR scanner for connection requests
+8. Speaker diarization (batch transcription edge function + UI)
 
