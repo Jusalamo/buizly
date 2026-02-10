@@ -1445,6 +1445,7 @@ export type Database = {
         Args: { p_ip_hash: string; p_profile_id: string }
         Returns: boolean
       }
+      complete_plug_connections: { Args: { p_plug_id: string }; Returns: Json }
       get_current_month_usage: { Args: { p_user_id: string }; Returns: number }
       get_profile_visibility: {
         Args: { target_user_id: string }

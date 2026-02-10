@@ -59,7 +59,6 @@ export function NoteEditor({
   const [hasChanges, setHasChanges] = useState(false);
   const lastAppendedTranscriptRef = useRef<string>('');
 
-  // Sync local state when note prop updates (handles async loading)
   useEffect(() => {
     if (note) {
       setTitle(note.title || '');
@@ -68,6 +67,7 @@ export function NoteEditor({
       setHasChanges(false);
     }
   }, [note?.id]);
+
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
@@ -76,7 +76,6 @@ export function NoteEditor({
 
   const transcription = useRealtimeTranscription();
 
-  // Auto-expand textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -84,7 +83,6 @@ export function NoteEditor({
     }
   }, [content]);
 
-  // Scroll textarea into view when focused (keyboard handling)
   useEffect(() => {
     const handleFocus = () => {
       setTimeout(() => {
@@ -97,7 +95,6 @@ export function NoteEditor({
     return () => textarea?.removeEventListener('focus', handleFocus);
   }, []);
 
-  // Track changes
   useEffect(() => {
     const originalTitle = note?.title || '';
     const originalContent = note?.text_note || '';
@@ -114,9 +111,7 @@ export function NoteEditor({
   useEffect(() => {
     if (!hasChanges || isNew) return;
 
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
     saveTimeoutRef.current = setTimeout(async () => {
       setAutoSaving(true);
@@ -135,11 +130,7 @@ export function NoteEditor({
       }
     }, 1500);
 
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
+    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [hasChanges, title, content, isPinned, note?.id, isNew, onSave]);
 
   // Append transcription to content when recording stops
@@ -147,6 +138,7 @@ export function NoteEditor({
     if (
       transcription.fullTranscript &&
       !transcription.isConnected &&
+      !transcription.isDiarizing &&
       transcription.fullTranscript !== lastAppendedTranscriptRef.current
     ) {
       lastAppendedTranscriptRef.current = transcription.fullTranscript;
@@ -154,10 +146,9 @@ export function NoteEditor({
         const separator = prev.trim() ? '\n\n---\n\n' : '';
         return prev + separator + transcription.fullTranscript;
       });
-      // Switch back to editor view so user sees the appended text
       setShowTranscription(false);
     }
-  }, [transcription.fullTranscript, transcription.isConnected]);
+  }, [transcription.fullTranscript, transcription.isConnected, transcription.isDiarizing]);
 
   const handleSave = async () => {
     setAutoSaving(true);
@@ -171,24 +162,20 @@ export function NoteEditor({
       });
       setLastSaved(new Date());
       setHasChanges(false);
-      if (isNew) {
-        onBack();
-      }
+      if (isNew) onBack();
     } finally {
       setAutoSaving(false);
     }
   };
 
-  const handleTogglePin = () => {
-    setIsPinned(!isPinned);
-  };
+  const handleTogglePin = () => setIsPinned(!isPinned);
 
   const handleSummaryGenerated = (summary: string) => {
     setContent(prev => prev + '\n\n## AI Summary\n\n' + summary);
   };
 
   const handleActionItemsExtracted = (items: Array<{ task: string; assignee?: string }>) => {
-    const formatted = items.map((item, i) => 
+    const formatted = items.map((item) => 
       `- [ ] ${item.task}${item.assignee ? ` (@${item.assignee})` : ''}`
     ).join('\n');
     setContent(prev => prev + '\n\n## Action Items\n\n' + formatted);
@@ -219,7 +206,6 @@ export function NoteEditor({
         </div>
         
         <div className="flex items-center gap-1">
-          {/* Calendar Link Button */}
           {!isNew && (
             <Button
               variant="ghost"
@@ -227,11 +213,7 @@ export function NoteEditor({
               onClick={() => setShowCalendarLink(true)}
               className={cn("h-10 w-10 min-w-[44px]", note?.meeting_id && 'text-primary')}
             >
-              {note?.meeting_id ? (
-                <Link2 className="h-5 w-5" />
-              ) : (
-                <Calendar className="h-5 w-5" />
-              )}
+              {note?.meeting_id ? <Link2 className="h-5 w-5" /> : <Calendar className="h-5 w-5" />}
             </Button>
           )}
 
@@ -259,10 +241,7 @@ export function NoteEditor({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {onDelete && (
-                <DropdownMenuItem 
-                  onClick={onDelete}
-                  className="text-destructive"
-                >
+                <DropdownMenuItem onClick={onDelete} className="text-destructive">
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete Note
                 </DropdownMenuItem>
@@ -288,8 +267,11 @@ export function NoteEditor({
           <TranscriptionPanel
             isConnected={transcription.isConnected}
             isConnecting={transcription.isConnecting}
+            isDiarizing={transcription.isDiarizing}
             segments={transcription.segments}
             partialText={transcription.partialText}
+            numSpeakers={transcription.numSpeakers}
+            onNumSpeakersChange={transcription.setNumSpeakers}
             onStart={transcription.startTranscription}
             onStop={transcription.stopTranscription}
             onBookmark={transcription.addBookmark}
@@ -322,7 +304,7 @@ export function NoteEditor({
           className="gap-2 h-10 min-w-[44px]"
         >
           <Mic className={cn('h-4 w-4', transcription.isConnected && 'text-destructive animate-pulse')} />
-          {transcription.isConnected ? 'Recording' : 'Transcribe'}
+          {transcription.isConnected ? 'Recording' : transcription.isDiarizing ? 'Processing' : 'Transcribe'}
         </Button>
         
         {isNew && (
@@ -331,9 +313,7 @@ export function NoteEditor({
             disabled={(!title.trim() && !content.trim()) || saving}
             className="h-10 min-w-[100px]"
           >
-            {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            ) : null}
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
             Create Note
           </Button>
         )}

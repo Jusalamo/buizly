@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Search, UserPlus, Users, Building, ArrowRight, Check, X, Clock, UserCheck, Lock, Loader2 } from "lucide-react";
+import { Search, UserPlus, Users, Building, ArrowRight, Check, X, Clock, Lock, Loader2, QrCode } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
@@ -18,7 +18,6 @@ export default function Discover() {
   const { isAuthenticated, initialized } = useAppCache();
   const navigate = useNavigate();
   
-  // Redirect to auth if not authenticated
   useEffect(() => {
     if (initialized && !isAuthenticated) {
       navigate("/auth", { replace: true });
@@ -26,18 +25,15 @@ export default function Discover() {
   }, [initialized, isAuthenticated, navigate]);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"search" | "requests" | "manual">("search");
-  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
-  const [processingAction, setProcessingAction] = useState<'accept' | 'decline' | null>(null);
+  const [activeTab, setActiveTab] = useState<"search" | "manual">("search");
+  const [scanning, setScanning] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   
   const { 
-    incomingRequests, 
-    outgoingRequests, 
-    loading: requestsLoading,
     sendRequest,
-    acceptRequest,
-    declineRequest,
     getRequestStatus
   } = useConnectionRequests();
 
@@ -48,13 +44,11 @@ export default function Discover() {
     clearResults,
   } = useProfileSearch();
 
-  // Manual add form
   const [manualForm, setManualForm] = useState({
     name: "", email: "", phone: "", title: "", company: "", notes: ""
   });
   const [savingManual, setSavingManual] = useState(false);
 
-  // INSTANT search as user types - no debounce for immediate feedback
   useEffect(() => {
     if (searchQuery.trim().length >= 1) {
       search(searchQuery);
@@ -63,32 +57,9 @@ export default function Discover() {
     }
   }, [searchQuery, search, clearResults]);
 
-  const handleAcceptRequest = async (requestId: string) => {
-    setProcessingRequestId(requestId);
-    setProcessingAction('accept');
-    try {
-      await acceptRequest(requestId);
-    } finally {
-      setProcessingRequestId(null);
-      setProcessingAction(null);
-    }
-  };
-
-  const handleDeclineRequest = async (requestId: string) => {
-    setProcessingRequestId(requestId);
-    setProcessingAction('decline');
-    try {
-      await declineRequest(requestId);
-    } finally {
-      setProcessingRequestId(null);
-      setProcessingAction(null);
-    }
-  };
-
   const handleSendRequest = async (targetProfile: SearchableProfile) => {
     const result = await sendRequest(targetProfile.id);
     if (result.success) {
-      // Results will auto-update via getRequestStatus
       toast({
         title: "Request sent!",
         description: `Waiting for ${targetProfile.full_name} to accept`,
@@ -115,7 +86,6 @@ export default function Discover() {
         return;
       }
 
-      // Check if this email already has a Buizly account
       const { data: existingProfile } = await supabase
         .from("profiles")
         .select("*")
@@ -163,37 +133,173 @@ export default function Discover() {
     return getRequestStatus(profileId);
   };
 
-  // Show requests tab badge
-  const requestCount = incomingRequests.length;
+  // QR Scanner
+  const startScanning = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      streamRef.current = stream;
+      setScanning(true);
+
+      setTimeout(() => {
+        if (videoRef.current && streamRef.current) {
+          videoRef.current.srcObject = streamRef.current;
+          videoRef.current.play();
+          startDetecting();
+        }
+      }, 100);
+    } catch (error) {
+      toast({
+        title: "Camera access required",
+        description: "Please allow camera access to scan QR codes",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const stopScanning = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
+    }
+    setScanning(false);
+  };
+
+  const startDetecting = () => {
+    if (!('BarcodeDetector' in window)) {
+      // Fallback: try to use a canvas-based approach or notify user
+      toast({
+        title: "QR scanning not supported",
+        description: "Your browser doesn't support QR code scanning. Try Chrome on Android or Safari on iOS.",
+        variant: "destructive",
+      });
+      stopScanning();
+      return;
+    }
+
+    const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+    
+    scanIntervalRef.current = setInterval(async () => {
+      if (!videoRef.current || videoRef.current.readyState < 2) return;
+      
+      try {
+        const barcodes = await detector.detect(videoRef.current);
+        if (barcodes.length > 0) {
+          const url = barcodes[0].rawValue;
+          handleScannedUrl(url);
+          stopScanning();
+        }
+      } catch (err) {
+        // Detection failed, continue scanning
+      }
+    }, 300);
+  };
+
+  const handleScannedUrl = async (url: string) => {
+    // Extract userId from URL patterns like buizly.lovable.app/u/{userId}
+    const match = url.match(/\/u\/([a-f0-9-]+)/i);
+    if (!match) {
+      toast({
+        title: "Invalid QR code",
+        description: "This doesn't appear to be a Buizly QR code",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const targetUserId = match[1];
+    
+    // Check if it's our own profile
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.id === targetUserId) {
+      toast({ title: "That's your own QR code!" });
+      return;
+    }
+
+    const status = getRequestStatus(targetUserId);
+    if (status === 'accepted') {
+      toast({ title: "Already connected", description: "You're already connected with this person" });
+      navigate(`/u/${targetUserId}`);
+      return;
+    }
+    if (status === 'pending') {
+      toast({ title: "Request already sent", description: "Waiting for them to accept" });
+      return;
+    }
+
+    const result = await sendRequest(targetUserId);
+    if (result.success) {
+      toast({
+        title: "Connection request sent!",
+        description: "They'll be notified of your request",
+      });
+      navigate(`/u/${targetUserId}`);
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+      }
+    };
+  }, []);
 
   return (
     <Layout>
       <div className="max-w-2xl mx-auto p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground mb-2">Add People</h1>
-          <p className="text-muted-foreground text-sm">Find and connect with professionals</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground mb-2">Add People</h1>
+            <p className="text-muted-foreground text-sm">Find and connect with professionals</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={scanning ? stopScanning : startScanning}
+            className="gap-2"
+          >
+            <QrCode className="h-4 w-4" />
+            {scanning ? 'Stop' : 'Scan QR'}
+          </Button>
         </div>
 
+        {/* QR Scanner */}
+        {scanning && (
+          <Card className="bg-card border-border p-4 relative overflow-hidden">
+            <video
+              ref={videoRef}
+              className="w-full rounded-lg aspect-square object-cover"
+              playsInline
+              muted
+            />
+            <div className="absolute inset-4 border-2 border-primary/50 rounded-lg pointer-events-none">
+              <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary rounded-tl-lg" />
+              <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-primary rounded-tr-lg" />
+              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-primary rounded-bl-lg" />
+              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary rounded-br-lg" />
+            </div>
+            <p className="text-center text-sm text-muted-foreground mt-2">Point your camera at a Buizly QR code</p>
+          </Card>
+        )}
+
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-          <TabsList className="grid w-full grid-cols-3 bg-secondary">
+          <TabsList className="grid w-full grid-cols-2 bg-secondary">
             <TabsTrigger 
               value="search" 
               className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
               <Search className="h-4 w-4 mr-2" />
               Find
-            </TabsTrigger>
-            <TabsTrigger 
-              value="requests"
-              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground relative"
-            >
-              <UserCheck className="h-4 w-4 mr-2" />
-              Requests
-              {requestCount > 0 && (
-                <Badge className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs px-1.5 py-0.5 min-w-[18px] h-[18px]">
-                  {requestCount}
-                </Badge>
-              )}
             </TabsTrigger>
             <TabsTrigger 
               value="manual"
@@ -228,7 +334,6 @@ export default function Discover() {
               )}
             </div>
 
-            {/* Auto-suggestions / Search Results */}
             <div className="space-y-2">
               {searching ? (
                 <div className="space-y-2">
@@ -276,7 +381,6 @@ export default function Discover() {
                         className="bg-card border-border p-3 hover:border-primary/50 transition-all"
                       >
                         <div className="flex items-center gap-3">
-                          {/* Profile Photo - Eager loading for instant display */}
                           <div 
                             className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 cursor-pointer overflow-hidden"
                             onClick={() => navigate(`/u/${profile.id}`)}
@@ -290,7 +394,6 @@ export default function Discover() {
                                 decoding="async"
                                 fetchPriority="high"
                                 onError={(e) => {
-                                  // Fallback to initials on error
                                   e.currentTarget.style.display = 'none';
                                   e.currentTarget.nextElementSibling?.classList.remove('hidden');
                                 }}
@@ -301,7 +404,6 @@ export default function Discover() {
                             </span>
                           </div>
                           
-                          {/* Profile Info */}
                           <div 
                             className="flex-1 min-w-0 cursor-pointer"
                             onClick={() => navigate(`/u/${profile.id}`)}
@@ -328,7 +430,6 @@ export default function Discover() {
                             )}
                           </div>
                           
-                          {/* Connection Button - Not shown for private profiles */}
                           {profile.isPrivate ? (
                             <Badge variant="outline" className="text-xs border-muted-foreground/30 text-muted-foreground whitespace-nowrap">
                               Private
@@ -360,170 +461,6 @@ export default function Discover() {
                     );
                   })}
                 </>
-              )}
-            </div>
-          </TabsContent>
-
-          {/* Connection Requests Tab */}
-          <TabsContent value="requests" className="space-y-6 mt-4">
-            {/* Incoming Requests */}
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                Incoming Requests ({incomingRequests.length})
-              </h3>
-              {requestsLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 2 }).map((_, i) => (
-                    <Card key={i} className="bg-card border-border p-3">
-                      <div className="flex items-center gap-3">
-                        <Skeleton className="w-10 h-10 rounded-full" />
-                        <div className="flex-1 space-y-1">
-                          <Skeleton className="h-4 w-28" />
-                          <Skeleton className="h-3 w-20" />
-                        </div>
-                        <Skeleton className="h-8 w-16" />
-                        <Skeleton className="h-8 w-16" />
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              ) : incomingRequests.length === 0 ? (
-                <Card className="bg-card border-border p-6 text-center">
-                  <p className="text-muted-foreground">No pending requests</p>
-                </Card>
-              ) : (
-                <div className="space-y-2">
-                  {incomingRequests.map((request) => (
-                    <Card key={request.id} className="bg-card border-border p-3">
-                      <div className="flex items-center gap-3">
-                        <div 
-                          className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center cursor-pointer overflow-hidden"
-                          onClick={() => navigate(`/u/${request.requester_id}`)}
-                        >
-                          {request.requester_profile?.avatar_url ? (
-                            <img 
-                              src={request.requester_profile.avatar_url} 
-                              alt={request.requester_profile.full_name}
-                              className="w-10 h-10 rounded-full object-cover"
-                              loading="eager"
-                              decoding="async"
-                              fetchPriority="high"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                                e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                              }}
-                            />
-                          ) : null}
-                          <span className={`text-primary font-bold text-sm ${request.requester_profile?.avatar_url ? 'hidden' : ''}`}>
-                            {request.requester_profile?.full_name?.charAt(0).toUpperCase() || '?'}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-foreground truncate text-sm">
-                            {request.requester_profile?.full_name || 'Unknown'}
-                          </p>
-                          {request.requester_profile?.company && (
-                            <p className="text-xs text-muted-foreground truncate">
-                              {request.requester_profile.company}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex gap-1.5">
-                          <Button
-                            onClick={() => handleAcceptRequest(request.id)}
-                            size="sm"
-                            disabled={processingRequestId === request.id}
-                            className="bg-green-600 hover:bg-green-500 active:bg-green-700 active:scale-95 transition-all text-white h-8 px-3"
-                          >
-                            {processingRequestId === request.id && processingAction === 'accept' ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Check className="h-4 w-4" />
-                            )}
-                          </Button>
-                          <Button
-                            onClick={() => handleDeclineRequest(request.id)}
-                            size="sm"
-                            variant="outline"
-                            disabled={processingRequestId === request.id}
-                            className="border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground active:scale-95 transition-all h-8 px-3"
-                          >
-                            {processingRequestId === request.id && processingAction === 'decline' ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <X className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Outgoing Requests */}
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                Sent Requests ({outgoingRequests.length})
-              </h3>
-              {outgoingRequests.length === 0 ? (
-                <Card className="bg-card border-border p-6 text-center">
-                  <p className="text-muted-foreground">No sent requests</p>
-                </Card>
-              ) : (
-                <div className="space-y-2">
-                  {outgoingRequests.map((request) => (
-                    <Card key={request.id} className="bg-card border-border p-3">
-                      <div className="flex items-center gap-3">
-                        <div 
-                          className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center cursor-pointer overflow-hidden"
-                          onClick={() => navigate(`/u/${request.target_id}`)}
-                        >
-                          {request.target_profile?.avatar_url ? (
-                            <img 
-                              src={request.target_profile.avatar_url} 
-                              alt={request.target_profile.full_name}
-                              className="w-10 h-10 rounded-full object-cover"
-                              loading="eager"
-                              decoding="async"
-                              fetchPriority="high"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                                e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                              }}
-                            />
-                          ) : null}
-                          <span className={`text-primary font-bold text-sm ${request.target_profile?.avatar_url ? 'hidden' : ''}`}>
-                            {request.target_profile?.full_name?.charAt(0).toUpperCase() || '?'}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-foreground truncate text-sm">
-                            {request.target_profile?.full_name || 'Unknown'}
-                          </p>
-                          {request.target_profile?.company && (
-                            <p className="text-xs text-muted-foreground truncate">
-                              {request.target_profile.company}
-                            </p>
-                          )}
-                        </div>
-                        <Badge 
-                          variant="outline" 
-                          className={
-                            request.status === 'accepted' 
-                              ? 'border-green-500/50 text-green-500' 
-                              : request.status === 'declined'
-                              ? 'border-destructive/50 text-destructive'
-                              : 'border-yellow-500/50 text-yellow-500'
-                          }
-                        >
-                          {request.status === 'accepted' ? 'Accepted' : request.status === 'declined' ? 'Declined' : 'Pending'}
-                        </Badge>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
               )}
             </div>
           </TabsContent>

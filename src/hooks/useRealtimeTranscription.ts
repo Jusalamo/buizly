@@ -13,13 +13,18 @@ interface TranscriptionSegment {
 export function useRealtimeTranscription() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isDiarizing, setIsDiarizing] = useState(false);
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
   const [partialText, setPartialText] = useState('');
   const [fullTranscript, setFullTranscript] = useState('');
+  const [numSpeakers, setNumSpeakers] = useState(1);
   const { toast } = useToast();
   const segmentIdRef = useRef(0);
   const partialTextRef = useRef('');
   const fullTranscriptRef = useRef('');
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const scribe = useScribe({
     modelId: 'scribe_v2_realtime',
@@ -47,18 +52,25 @@ export function useRealtimeTranscription() {
   const startTranscription = useCallback(async () => {
     setIsConnecting(true);
     try {
-      // Request microphone permission
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
 
-      // Get token from edge function
+      // If diarization needed, also record audio for batch processing
+      if (numSpeakers > 1) {
+        audioChunksRef.current = [];
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+        mediaRecorder.start(1000); // Collect chunks every second
+        mediaRecorderRef.current = mediaRecorder;
+      }
+
       const { data, error } = await supabase.functions.invoke('elevenlabs-scribe-token');
       
       if (error) throw error;
-      if (!data?.token) {
-        throw new Error('No transcription token received');
-      }
+      if (!data?.token) throw new Error('No transcription token received');
 
-      // Start the transcription session
       await scribe.connect({
         token: data.token,
         microphone: {
@@ -71,7 +83,9 @@ export function useRealtimeTranscription() {
       setIsConnected(true);
       toast({
         title: 'Transcription started',
-        description: 'Speak clearly into your microphone',
+        description: numSpeakers > 1 
+          ? `Recording with ${numSpeakers}-speaker diarization`
+          : 'Speak clearly into your microphone',
       });
     } catch (error: any) {
       console.error('Failed to start transcription:', error);
@@ -83,16 +97,19 @@ export function useRealtimeTranscription() {
     } finally {
       setIsConnecting(false);
     }
-  }, [scribe, toast]);
+  }, [scribe, toast, numSpeakers]);
 
   const stopTranscription = useCallback(async () => {
     try {
-      // Capture any remaining partial text before disconnecting
       const remainingPartial = partialTextRef.current.trim();
       
       await scribe.disconnect();
       
-      // Append any uncommitted partial text to the full transcript
+      // Stop media recorder
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+
       if (remainingPartial) {
         setFullTranscript(prev => {
           const updated = prev + (prev ? ' ' : '') + remainingPartial;
@@ -110,14 +127,109 @@ export function useRealtimeTranscription() {
       setIsConnected(false);
       partialTextRef.current = '';
       setPartialText('');
-      toast({
-        title: 'Transcription stopped',
-        description: 'Transcript added to your note',
-      });
+
+      // If diarization is enabled, send audio for batch processing
+      if (numSpeakers > 1 && audioChunksRef.current.length > 0) {
+        setIsDiarizing(true);
+        toast({
+          title: 'Processing speaker diarization...',
+          description: 'Identifying speakers in your recording',
+        });
+
+        try {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'recording.webm');
+          formData.append('num_speakers', String(numSpeakers));
+
+          const { data, error } = await supabase.functions.invoke('elevenlabs-transcribe', {
+            body: formData,
+          });
+
+          if (error) throw error;
+
+          if (data?.words && data.words.length > 0) {
+            // Group words by speaker into segments
+            const diarizedSegments: TranscriptionSegment[] = [];
+            let currentSpeaker = data.words[0].speaker;
+            let currentText = '';
+            let segIdx = 0;
+
+            for (const word of data.words) {
+              if (word.speaker !== currentSpeaker) {
+                if (currentText.trim()) {
+                  diarizedSegments.push({
+                    id: `diarized-${segIdx++}`,
+                    text: currentText.trim(),
+                    timestamp: Date.now(),
+                    speaker: currentSpeaker || undefined,
+                  });
+                }
+                currentSpeaker = word.speaker;
+                currentText = word.text;
+              } else {
+                currentText += word.text;
+              }
+            }
+            // Last segment
+            if (currentText.trim()) {
+              diarizedSegments.push({
+                id: `diarized-${segIdx++}`,
+                text: currentText.trim(),
+                timestamp: Date.now(),
+                speaker: currentSpeaker || undefined,
+              });
+            }
+
+            // Replace segments with diarized ones
+            setSegments(diarizedSegments);
+            
+            // Rebuild full transcript with speaker labels
+            const diarizedTranscript = diarizedSegments
+              .map(s => `${s.speaker ? `[${s.speaker}] ` : ''}${s.text}`)
+              .join('\n');
+            setFullTranscript(diarizedTranscript);
+            fullTranscriptRef.current = diarizedTranscript;
+
+            toast({
+              title: 'Diarization complete',
+              description: `Identified speakers in your recording`,
+            });
+          } else if (data?.text) {
+            // Fallback: use plain text
+            toast({
+              title: 'Transcription complete',
+              description: 'Speaker identification was not available',
+            });
+          }
+        } catch (diarizeError: any) {
+          console.error('Diarization error:', diarizeError);
+          toast({
+            variant: 'destructive',
+            title: 'Diarization failed',
+            description: 'Using real-time transcript instead',
+          });
+        } finally {
+          setIsDiarizing(false);
+        }
+      } else {
+        toast({
+          title: 'Transcription stopped',
+          description: 'Transcript added to your note',
+        });
+      }
+
+      // Cleanup stream
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
+      mediaRecorderRef.current = null;
+      audioChunksRef.current = [];
     } catch (error) {
       console.error('Error stopping transcription:', error);
     }
-  }, [scribe, toast]);
+  }, [scribe, toast, numSpeakers]);
 
   const clearTranscription = useCallback(() => {
     setSegments([]);
@@ -137,20 +249,18 @@ export function useRealtimeTranscription() {
   }, []);
 
   return {
-    // State
     isConnected,
     isConnecting,
+    isDiarizing,
     segments,
     partialText,
     fullTranscript,
-    
-    // Actions
+    numSpeakers,
+    setNumSpeakers,
     startTranscription,
     stopTranscription,
     clearTranscription,
     addBookmark,
-    
-    // Raw scribe access if needed
     scribe,
   };
 }
