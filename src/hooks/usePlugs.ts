@@ -44,7 +44,6 @@ export function usePlugs() {
       if (!session?.user) return;
       const user = session.user;
 
-      // Fetch plugs I sent
       const { data: sent, error: sentError } = await supabase
         .from('plugs')
         .select('*')
@@ -53,7 +52,6 @@ export function usePlugs() {
 
       if (sentError) throw sentError;
 
-      // Fetch plugs I'm a participant in
       const { data: participantData, error: participantError } = await supabase
         .from('plug_participants')
         .select('plug_id')
@@ -79,7 +77,6 @@ export function usePlugs() {
         }));
       }
 
-      // Fetch participants for all plugs
       const allPlugIds = [...(sent?.map(p => p.id) || []), ...received.map(p => p.id)];
       
       if (allPlugIds.length > 0) {
@@ -88,13 +85,11 @@ export function usePlugs() {
           .select('*')
           .in('plug_id', allPlugIds);
 
-        // Get unique user IDs
         const userIds = new Set<string>();
         allParticipants?.forEach(p => userIds.add(p.user_id));
         (sent || []).forEach(p => userIds.add(p.sender_id));
         received.forEach(p => userIds.add(p.sender_id));
 
-        // Fetch profiles
         const { data: profiles } = await supabase
           .from('profiles')
           .select('id, full_name, avatar_url, job_title, company')
@@ -102,14 +97,12 @@ export function usePlugs() {
 
         const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
 
-        // Enrich participants
         const enrichedParticipants = allParticipants?.map(p => ({
           ...p,
           status: p.status as 'pending' | 'accepted' | 'declined',
           user_profile: profileMap.get(p.user_id)
         })) || [];
 
-        // Attach to plugs
         const enrichSent = (sent || []).map(plug => ({
           ...plug,
           status: plug.status as 'pending' | 'completed' | 'expired',
@@ -143,22 +136,15 @@ export function usePlugs() {
       if (!session?.user) throw new Error('Not authenticated');
       const user = session.user;
 
-      if (connectionIds.length < 2) {
-        throw new Error('At least 2 contacts are required');
-      }
+      if (connectionIds.length < 2) throw new Error('At least 2 contacts are required');
+      if (connectionIds.length > 5) throw new Error('Maximum 5 contacts allowed');
 
-      if (connectionIds.length > 5) {
-        throw new Error('Maximum 5 contacts allowed');
-      }
-
-      // Get sender's profile
       const { data: myProfile } = await supabase
         .from('profiles')
         .select('full_name')
         .eq('id', user.id)
         .maybeSingle();
 
-      // Get connection details to find associated user emails
       const { data: connectionDetails, error: connError } = await supabase
         .from('connections')
         .select('id, connection_name, connection_email')
@@ -166,7 +152,6 @@ export function usePlugs() {
 
       if (connError) throw connError;
 
-      // Find user profiles by email (connections might be linked to real users)
       const emails = connectionDetails?.map(c => c.connection_email).filter(Boolean) || [];
       
       let userProfiles: { id: string; email: string; full_name: string }[] = [];
@@ -180,27 +165,20 @@ export function usePlugs() {
 
       const emailToUserId = new Map(userProfiles.map(p => [p.email, p.id]));
 
-      // Create plug
       const { data: plug, error: plugError } = await supabase
         .from('plugs')
-        .insert({
-          sender_id: user.id,
-          message: message || null
-        })
+        .insert({ sender_id: user.id, message: message || null })
         .select()
         .single();
 
       if (plugError) throw plugError;
 
-      // Add participants - only those who have user accounts
       const participantUserIds: string[] = [];
       const connectionNamesForNotification: string[] = [];
       
       for (const conn of connectionDetails || []) {
         const userId = conn.connection_email ? emailToUserId.get(conn.connection_email) : null;
-        if (userId) {
-          participantUserIds.push(userId);
-        }
+        if (userId) participantUserIds.push(userId);
         connectionNamesForNotification.push(conn.connection_name);
       }
 
@@ -214,12 +192,8 @@ export function usePlugs() {
           .from('plug_participants')
           .insert(participantInserts);
 
-        if (participantsError) {
-          console.error('Participant insert error:', participantsError);
-          // Continue even if participants fail - the plug was created
-        }
+        if (participantsError) console.error('Participant insert error:', participantsError);
 
-        // Create notifications for users who have accounts
         const profileMap = new Map(userProfiles.map(p => [p.id, p.full_name]));
         
         for (const participantId of participantUserIds) {
@@ -235,11 +209,7 @@ export function usePlugs() {
                 type: 'plug_request',
                 title: 'New Introduction',
                 message: `${myProfile?.full_name || 'Someone'} wants to introduce you to ${otherNames}`,
-                data: {
-                  plug_id: plug.id,
-                  sender_id: user.id,
-                  sender_name: myProfile?.full_name
-                }
+                data: { plug_id: plug.id, sender_id: user.id, sender_name: myProfile?.full_name }
               }
             });
           } catch (notifError) {
@@ -283,9 +253,52 @@ export function usePlugs() {
 
       if (error) throw error;
 
-      toast({
-        title: accept ? 'Introduction accepted!' : 'Introduction declined'
-      });
+      // If accepted, check if all participants have accepted and create mutual connections
+      if (accept) {
+        try {
+          const { data: result } = await supabase.rpc('complete_plug_connections', { 
+            p_plug_id: plugId 
+          });
+          
+          if (result && typeof result === 'object' && (result as any).success) {
+            toast({
+              title: 'Connected!',
+              description: 'You\'ve been added to each other\'s networks',
+            });
+            
+            // Notify all participants
+            const { data: participants } = await supabase
+              .from('plug_participants')
+              .select('user_id')
+              .eq('plug_id', plugId);
+            
+            for (const p of participants || []) {
+              if (p.user_id !== user.id) {
+                try {
+                  await supabase.functions.invoke('create-notification', {
+                    body: {
+                      user_id: p.user_id,
+                      type: 'new_connection',
+                      title: 'New Connection',
+                      message: 'All participants accepted the introduction! You\'re now connected.',
+                      data: { plug_id: plugId }
+                    }
+                  });
+                } catch (e) {
+                  console.error('Notification error:', e);
+                }
+              }
+            }
+          } else {
+            toast({ title: 'Introduction accepted!' });
+          }
+        } catch (rpcError) {
+          console.error('RPC error:', rpcError);
+          toast({ title: 'Introduction accepted!' });
+        }
+      } else {
+        toast({ title: 'Introduction declined' });
+      }
 
       await fetchPlugs();
     } catch (error: any) {
@@ -297,27 +310,47 @@ export function usePlugs() {
     }
   }, [fetchPlugs, toast]);
 
-  // Real-time subscription
+  const deletePlug = useCallback(async (plugId: string, isSender: boolean) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error('Not authenticated');
+
+      if (isSender) {
+        // Delete all participants first, then the plug
+        await supabase.from('plug_participants').delete().eq('plug_id', plugId);
+        const { error } = await supabase.from('plugs').delete().eq('id', plugId);
+        if (error) throw error;
+      } else {
+        // Just remove my participant record
+        const { error } = await supabase
+          .from('plug_participants')
+          .delete()
+          .eq('plug_id', plugId)
+          .eq('user_id', session.user.id);
+        if (error) throw error;
+      }
+
+      toast({ title: 'Introduction removed' });
+      await fetchPlugs();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive'
+      });
+    }
+  }, [fetchPlugs, toast]);
+
   useEffect(() => {
     fetchPlugs();
 
     const channel = supabase
       .channel('plugs-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'plugs' },
-        () => fetchPlugs()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'plug_participants' },
-        () => fetchPlugs()
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'plugs' }, () => fetchPlugs())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'plug_participants' }, () => fetchPlugs())
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [fetchPlugs]);
 
   return {
@@ -326,6 +359,7 @@ export function usePlugs() {
     loading,
     createPlug,
     respondToPlug,
+    deletePlug,
     refetch: fetchPlugs
   };
 }

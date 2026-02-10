@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Mail, Phone, Briefcase, Globe, Download, Lock, Smartphone, Bell, Instagram } from "lucide-react";
+import { Mail, Phone, Briefcase, Globe, Download, Lock, Smartphone, Bell, Instagram, Building } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ProfileCardSkeleton } from "@/components/skeletons/ProfileCardSkeleton";
 import { OpenAppModal } from "@/components/OpenAppModal";
@@ -23,7 +23,7 @@ interface PublicSafeProfile extends Omit<Profile, 'email' | 'phone'> {
 interface ProfileState {
   profile: PublicSafeProfile | null;
   isPrivate: boolean;
-  basicInfo: { name: string; avatar_url: string | null } | null;
+  basicInfo: { name: string; avatar_url: string | null; job_title?: string | null; company?: string | null } | null;
   isAuthenticated: boolean;
   currentUserId: string | null;
 }
@@ -59,17 +59,13 @@ export default function PublicProfile() {
       const isAuthenticated = !!session?.user;
       const currentUserId = session?.user?.id || null;
 
-      // First check visibility - use RPC to get visibility safely
       const { data: visibility } = await supabase.rpc('get_profile_visibility', { 
         target_user_id: userId 
       });
       
       const isPrivate = visibility === 'private';
-      const isConnectionsOnly = visibility === 'connections_only';
 
-      // For private profiles (not the owner), show limited info
       if (isPrivate && currentUserId !== userId) {
-        // Get basic public info only via secure function
         const { data: publicProfile } = await supabase.rpc('get_public_profile_safe', { 
           profile_id: userId 
         });
@@ -80,7 +76,9 @@ export default function PublicProfile() {
             isPrivate: true, 
             basicInfo: { 
               name: publicProfile[0].full_name, 
-              avatar_url: publicProfile[0].avatar_url
+              avatar_url: publicProfile[0].avatar_url,
+              job_title: publicProfile[0].job_title,
+              company: publicProfile[0].company,
             },
             isAuthenticated,
             currentUserId
@@ -92,7 +90,6 @@ export default function PublicProfile() {
         return;
       }
 
-      // For authenticated users, get profile with contact info
       if (isAuthenticated) {
         const { data: fullProfile } = await supabase.rpc('get_profile_with_contact', { 
           profile_id: userId 
@@ -110,7 +107,6 @@ export default function PublicProfile() {
           setState({ profile: null, isPrivate: false, basicInfo: null, isAuthenticated, currentUserId });
         }
       } else {
-        // For unauthenticated users, get public profile without contact info
         const { data: publicProfile } = await supabase.rpc('get_public_profile_safe', { 
           profile_id: userId 
         });
@@ -193,25 +189,44 @@ END:VCARD`;
 
   if (loading) return <ProfileCardSkeleton />;
 
+  // Private profile - show name, avatar, job title, company but no contact info
   if (state.isPrivate && state.basicInfo) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="bg-gradient-to-b from-primary/20 to-background pt-12 pb-20 px-4">
-          <div className="max-w-lg mx-auto text-center">
-            <OptimizedAvatar src={state.basicInfo.avatar_url} alt={state.basicInfo.name} size="xl" className="mx-auto mb-4 border-4 border-primary" />
-            <h1 className="text-3xl font-bold text-foreground">{state.basicInfo.name}</h1>
-          </div>
-        </div>
-        <div className="max-w-lg mx-auto px-4 -mt-8 space-y-6 pb-12">
-          <Card className="bg-card border-border p-8 text-center">
-            <Lock className="h-8 w-8 text-muted-foreground mx-auto mb-4" />
-            <h2 className="text-lg font-semibold text-foreground">Private Account</h2>
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <Card className="bg-card border-border overflow-hidden">
+            {/* Business card header */}
+            <div className="bg-gradient-to-r from-primary/20 to-primary/5 p-6">
+              <div className="flex items-center gap-4">
+                <OptimizedAvatar src={state.basicInfo.avatar_url} alt={state.basicInfo.name} size="xl" className="border-4 border-card shadow-lg" />
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-xl font-bold text-foreground truncate">{state.basicInfo.name}</h1>
+                  {state.basicInfo.job_title && (
+                    <p className="text-sm text-primary font-medium truncate">{state.basicInfo.job_title}</p>
+                  )}
+                  {state.basicInfo.company && (
+                    <p className="text-sm text-muted-foreground flex items-center gap-1 truncate">
+                      <Building className="h-3.5 w-3.5 flex-shrink-0" />
+                      {state.basicInfo.company}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3 text-muted-foreground">
+                <Lock className="h-5 w-5" />
+                <p className="text-sm">This account is private. Contact info is hidden.</p>
+              </div>
+              
+              {state.isAuthenticated && !notificationSent && (
+                <Button onClick={notifyPrivateUser} variant="outline" className="w-full">
+                  <Bell className="h-5 w-5 mr-2" /> Notify {state.basicInfo.name.split(' ')[0]}
+                </Button>
+              )}
+            </div>
           </Card>
-          {state.isAuthenticated && !notificationSent && (
-            <Button onClick={notifyPrivateUser} variant="outline" className="w-full">
-              <Bell className="h-5 w-5 mr-2" /> Notify {state.basicInfo.name.split(' ')[0]}
-            </Button>
-          )}
         </div>
         <OpenAppModal open={showOpenAppModal} onOpenChange={setShowOpenAppModal} profileId={userId || ""} profileName={state.basicInfo?.name} />
       </div>
@@ -229,19 +244,83 @@ END:VCARD`;
     );
   }
 
+  // Business Card Layout
   return (
-    <div className="min-h-screen bg-background">
-      <div className="bg-gradient-to-b from-primary/20 to-background pt-12 pb-20 px-4">
-        <div className="max-w-lg mx-auto text-center">
-          <OptimizedAvatar src={state.profile.avatar_url} alt={state.profile.full_name} size="xl" className="mx-auto mb-4 border-4 border-primary" />
-          <h1 className="text-3xl font-bold text-foreground">{state.profile.full_name}</h1>
-          {state.profile.job_title && <p className="text-primary font-medium mt-1">{state.profile.job_title}</p>}
-          {state.profile.company && <p className="text-muted-foreground">{state.profile.company}</p>}
-        </div>
-      </div>
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-4">
+        {/* Business Card */}
+        <Card className="bg-card border-border overflow-hidden shadow-lg">
+          {/* Card Header with gradient */}
+          <div className="bg-gradient-to-r from-primary/20 to-primary/5 p-6">
+            <div className="flex items-start gap-4">
+              <OptimizedAvatar 
+                src={state.profile.avatar_url} 
+                alt={state.profile.full_name} 
+                size="xl" 
+                className="border-4 border-card shadow-lg flex-shrink-0" 
+              />
+              <div className="flex-1 min-w-0 pt-1">
+                <h1 className="text-xl font-bold text-foreground truncate">{state.profile.full_name}</h1>
+                {state.profile.job_title && (
+                  <p className="text-sm text-primary font-medium mt-0.5">{state.profile.job_title}</p>
+                )}
+                {state.profile.company && (
+                  <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
+                    <Building className="h-3.5 w-3.5 flex-shrink-0" />
+                    {state.profile.company}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-8 space-y-6 pb-12">
-        {/* Gallery Photos - Horizontal row */}
+          {/* Contact Details */}
+          <div className="p-4 space-y-2">
+            {state.profile.email && (
+              <a href={`mailto:${state.profile.email}`} className="flex items-center gap-3 p-3 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors">
+                <Mail className="h-4 w-4 text-primary flex-shrink-0" />
+                <span className="text-sm text-foreground truncate">{state.profile.email}</span>
+              </a>
+            )}
+            {state.profile.phone && (
+              <a href={`tel:${state.profile.phone}`} className="flex items-center gap-3 p-3 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors">
+                <Phone className="h-4 w-4 text-primary flex-shrink-0" />
+                <span className="text-sm text-foreground">{state.profile.phone}</span>
+              </a>
+            )}
+            {state.profile.website && (
+              <a href={state.profile.website} target="_blank" className="flex items-center gap-3 p-3 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors">
+                <Globe className="h-4 w-4 text-primary flex-shrink-0" />
+                <span className="text-sm text-foreground truncate">{state.profile.website}</span>
+              </a>
+            )}
+          </div>
+
+          {/* Social Links */}
+          {(state.profile.linkedin_url || state.profile.instagram_url) && (
+            <div className="flex justify-center gap-3 pb-4 px-4">
+              {state.profile.linkedin_url && (
+                <Button variant="outline" size="icon" className="border-[#0077B5] text-[#0077B5]" onClick={() => window.open(state.profile!.linkedin_url!, '_blank')}>
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                </Button>
+              )}
+              {state.profile.instagram_url && (
+                <Button variant="outline" size="icon" className="border-[#E4405F] text-[#E4405F]" onClick={() => window.open(state.profile!.instagram_url!, '_blank')}>
+                  <Instagram className="h-5 w-5" />
+                </Button>
+              )}
+            </div>
+          )}
+        </Card>
+
+        {/* Bio */}
+        {state.profile.bio && (
+          <Card className="bg-card border-border p-4">
+            <p className="text-sm text-foreground leading-relaxed">{state.profile.bio}</p>
+          </Card>
+        )}
+
+        {/* Gallery Photos */}
         {state.profile.gallery_photos && state.profile.gallery_photos.length > 0 && (
           <Card className="bg-card border-border p-4">
             <div className="flex gap-3 overflow-x-auto pb-2">
@@ -257,39 +336,17 @@ END:VCARD`;
           </Card>
         )}
 
-        {state.profile.bio && (
-          <Card className="bg-card border-border p-6">
-            <p className="text-foreground leading-relaxed">{state.profile.bio}</p>
-          </Card>
-        )}
-
-        {/* Social Links */}
-        {(state.profile.linkedin_url || state.profile.instagram_url) && (
-          <div className="flex justify-center gap-3">
-            {state.profile.linkedin_url && (
-              <Button variant="outline" size="icon" className="border-[#0077B5] text-[#0077B5]" onClick={() => window.open(state.profile!.linkedin_url!, '_blank')}>
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-              </Button>
-            )}
-            {state.profile.instagram_url && (
-              <Button variant="outline" size="icon" className="border-[#E4405F] text-[#E4405F]" onClick={() => window.open(state.profile!.instagram_url!, '_blank')}>
-                <Instagram className="h-5 w-5" />
-              </Button>
-            )}
-          </div>
-        )}
-
-        <Card className="bg-card border-border p-6 space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground uppercase">Contact Info</h3>
-          {state.profile.email && <a href={`mailto:${state.profile.email}`} className="flex items-center gap-3 p-3 bg-secondary rounded-lg"><Mail className="h-5 w-5 text-primary" /><span className="text-foreground">{state.profile.email}</span></a>}
-          {state.profile.phone && <a href={`tel:${state.profile.phone}`} className="flex items-center gap-3 p-3 bg-secondary rounded-lg"><Phone className="h-5 w-5 text-primary" /><span className="text-foreground">{state.profile.phone}</span></a>}
-          {state.profile.website && <a href={state.profile.website} target="_blank" className="flex items-center gap-3 p-3 bg-secondary rounded-lg"><Globe className="h-5 w-5 text-primary" /><span className="text-foreground truncate">{state.profile.website}</span></a>}
-        </Card>
-
-        <Card className="bg-card border-border p-6 space-y-3">
-          <Button onClick={() => setShowOpenAppModal(true)} className="w-full bg-primary text-primary-foreground py-6"><Smartphone className="h-5 w-5 mr-2" />{state.isAuthenticated ? 'Open App' : 'Get Buizly'}</Button>
-          <Button onClick={downloadVCard} variant="outline" className="w-full border-primary text-primary py-6"><Download className="h-5 w-5 mr-2" />Save Contact</Button>
-        </Card>
+        {/* Action Buttons */}
+        <div className="space-y-3">
+          <Button onClick={() => setShowOpenAppModal(true)} className="w-full bg-primary text-primary-foreground py-6">
+            <Smartphone className="h-5 w-5 mr-2" />
+            {state.isAuthenticated ? 'Open App' : 'Get Buizly'}
+          </Button>
+          <Button onClick={downloadVCard} variant="outline" className="w-full border-primary text-primary py-6">
+            <Download className="h-5 w-5 mr-2" />
+            Save Contact
+          </Button>
+        </div>
       </div>
       <OpenAppModal open={showOpenAppModal} onOpenChange={setShowOpenAppModal} profileId={userId || ""} profileName={state.profile?.full_name} />
     </div>

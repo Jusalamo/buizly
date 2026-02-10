@@ -1,52 +1,43 @@
 import { Home, Users, UserPlus, Calendar, Settings } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { useConnectionRequests } from "@/hooks/useConnectionRequests";
 import { useNotificationsOptimistic } from "@/hooks/useNotificationsOptimistic";
 import { useMemo, useEffect, useRef } from "react";
 
 const navItems = [
   { to: "/", icon: Home, label: "Home", matchPaths: ["/", "/meeting", "/notes"], notifType: null, tourId: "dashboard" },
   { to: "/network", icon: Users, label: "Network", matchPaths: ["/network", "/connection"], notifType: "network", tourId: "network" },
-  { to: "/discover", icon: UserPlus, label: "Add", matchPaths: ["/discover", "/capture"], notifType: "discover", tourId: "capture" },
+  { to: "/discover", icon: UserPlus, label: "Add", matchPaths: ["/discover", "/capture"], notifType: null, tourId: "capture" },
   { to: "/schedule", icon: Calendar, label: "Schedule", matchPaths: ["/schedule", "/calendar"], notifType: "schedule", tourId: "schedule" },
   { to: "/settings", icon: Settings, label: "Settings", matchPaths: ["/settings", "/profile", "/analytics", "/subscription"], notifType: null, tourId: "settings" },
 ];
 
 export const BottomNav = () => {
   const location = useLocation();
-  const { incomingRequests } = useConnectionRequests();
-  // Use optimistic hook for instant real-time updates from global cache
   const { notifications, markAsRead } = useNotificationsOptimistic();
   const previousPath = useRef<string>("");
   
-  // Calculate notification counts per section - only unread ones
   const notificationCounts = useMemo(() => {
     const unread = notifications.filter(n => !n.read);
     
     return {
-      discover: incomingRequests.length, // Connection requests
-      network: unread.filter(n => n.type === 'new_connection' || n.type === 'plug_request').length, // New connections and plugs
+      network: unread.filter(n => n.type === 'new_connection' || n.type === 'plug_request').length,
       schedule: unread.filter(n => 
         n.type === 'meeting_request' || 
         n.type === 'meeting_confirmed' || 
         n.type === 'meeting_reminder' ||
         n.type === 'meeting_rescheduled'
-      ).length, // Meeting related
+      ).length,
     };
-  }, [incomingRequests, notifications]);
+  }, [notifications]);
   
-  // Mark notifications as read when visiting a page
   useEffect(() => {
     const currentPath = location.pathname;
-    
-    // Only run when path changes
     if (previousPath.current === currentPath) return;
     previousPath.current = currentPath;
     
     const unread = notifications.filter(n => !n.read);
     
-    // Mark network-related notifications as read when visiting /network
     if (currentPath.startsWith('/network')) {
       const networkNotifs = unread.filter(n => 
         n.type === 'new_connection' || n.type === 'plug_request'
@@ -54,7 +45,6 @@ export const BottomNav = () => {
       networkNotifs.forEach(n => markAsRead(n.id));
     }
     
-    // Mark schedule-related notifications as read when visiting /schedule or /calendar
     if (currentPath.startsWith('/schedule') || currentPath.startsWith('/calendar')) {
       const scheduleNotifs = unread.filter(n => 
         n.type === 'meeting_request' || 
