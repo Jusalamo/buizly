@@ -27,7 +27,7 @@ serve(async (req) => {
     const apiFormData = new FormData();
     apiFormData.append("file", audioFile);
     apiFormData.append("model_id", "scribe_v2");
-    apiFormData.append("diarize", "true");
+    apiFormData.append("enable_speaker_diarization", "true");
     apiFormData.append("tag_audio_events", "false");
     
     if (numSpeakers && parseInt(numSpeakers) > 1) {
@@ -49,6 +49,8 @@ serve(async (req) => {
     }
 
     const transcription = await response.json();
+    console.log("ElevenLabs response keys:", Object.keys(transcription));
+    console.log("Words count:", transcription.words?.length, "First word sample:", JSON.stringify(transcription.words?.[0]));
 
     return new Response(JSON.stringify(transcription), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

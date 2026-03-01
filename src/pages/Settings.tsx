@@ -213,8 +213,24 @@ export default function Settings() {
           </div>
         </Card>
 
-        {/* Business Card Customization (Pro Feature) */}
-        <BusinessCardCustomizer />
+        {/* Business Card Customization */}
+        <BusinessCardCustomizer 
+          onSave={async (customization) => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.user) return;
+            await supabase.from('user_settings').update({
+              qr_foreground: customization.qrForeground,
+              qr_background: customization.qrBackground,
+              accent_color: customization.accentColor,
+              updated_at: new Date().toISOString(),
+            }).eq('user_id', session.user.id);
+          }}
+          initialCustomization={{
+            qrForeground: (settings as any)?.qr_foreground || '#00ff4d',
+            qrBackground: (settings as any)?.qr_background || '#000000',
+            accentColor: (settings as any)?.accent_color || '#00ff4d',
+          }}
+        />
         <Card
           className="bg-card border-border p-4 cursor-pointer hover:bg-card/80 transition-colors"
           onClick={() => navigate("/profile")}

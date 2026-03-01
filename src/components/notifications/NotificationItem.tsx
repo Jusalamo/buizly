@@ -86,7 +86,6 @@ export function NotificationItem({
   onMarkRead,
 }: NotificationItemProps) {
   const [isProcessing, setIsProcessing] = useState(false);
-  const [actionTaken, setActionTaken] = useState<'accepted' | 'declined' | null>(null);
   
   const config: NotificationConfigItem = notificationConfig[notification.type] || {
     icon: <Bell className="h-4 w-4 text-muted-foreground" />,
@@ -97,12 +96,11 @@ export function NotificationItem({
   const handleAccept = async () => {
     if (!onAccept || isProcessing) return;
     setIsProcessing(true);
-    setActionTaken('accepted');
-    
     try {
       await onAccept(notification.id);
+      // Parent (NotificationList) calls onDelete which removes this from the list
     } catch (error) {
-      setActionTaken(null);
+      // Keep item visible on error
     } finally {
       setIsProcessing(false);
     }
@@ -111,12 +109,11 @@ export function NotificationItem({
   const handleDecline = async () => {
     if (!onDecline || isProcessing) return;
     setIsProcessing(true);
-    setActionTaken('declined');
-    
     try {
       await onDecline(notification.id);
+      // Parent (NotificationList) calls onDelete which removes this from the list
     } catch (error) {
-      setActionTaken(null);
+      // Keep item visible on error
     } finally {
       setIsProcessing(false);
     }
@@ -136,32 +133,6 @@ export function NotificationItem({
   const personName = notification.data?.requester_name || 
                      notification.data?.connection_name || 
                      notification.data?.sender_name;
-
-  // If action was taken, show confirmation state
-  if (actionTaken) {
-    return (
-      <div className={cn(
-        "p-4 transition-all duration-300",
-        actionTaken === 'accepted' ? 'bg-primary/10' : 'bg-muted/50'
-      )}>
-        <div className="flex items-center gap-3">
-          <div className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-            actionTaken === 'accepted' ? 'bg-primary/20' : 'bg-muted'
-          )}>
-            {actionTaken === 'accepted' ? (
-              <Check className="h-5 w-5 text-primary" />
-            ) : (
-              <X className="h-5 w-5 text-muted-foreground" />
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {actionTaken === 'accepted' ? 'Connection accepted!' : 'Request declined'}
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   const actions = config.actions || [];
   const hasActions = actions.length > 0;
@@ -223,7 +194,11 @@ export function NotificationItem({
                 disabled={isProcessing}
                 className="flex-1"
               >
-                <Check className="h-4 w-4 mr-1" />
+                {isProcessing ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent mr-1" />
+                ) : (
+                  <Check className="h-4 w-4 mr-1" />
+                )}
                 Accept
               </Button>
               <Button

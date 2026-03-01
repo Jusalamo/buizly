@@ -149,23 +149,36 @@ export function useRealtimeTranscription() {
           if (error) throw error;
 
           if (data?.words && data.words.length > 0) {
+            // Normalize speaker labels - ElevenLabs may return numeric IDs or "speaker_0" format
+            const normalizeSpeaker = (speaker: any): string => {
+              if (speaker == null) return 'Speaker 1';
+              const s = String(speaker);
+              // Handle "speaker_0", "speaker_1" format
+              const labelMatch = s.match(/speaker[_\s]?(\d+)/i);
+              if (labelMatch) return `Speaker ${parseInt(labelMatch[1]) + 1}`;
+              // Handle plain numeric: 0, 1, 2
+              if (/^\d+$/.test(s)) return `Speaker ${parseInt(s) + 1}`;
+              return s;
+            };
+
             // Group words by speaker into segments
             const diarizedSegments: TranscriptionSegment[] = [];
-            let currentSpeaker = data.words[0].speaker;
+            let currentSpeaker = normalizeSpeaker(data.words[0].speaker);
             let currentText = '';
             let segIdx = 0;
 
             for (const word of data.words) {
-              if (word.speaker !== currentSpeaker) {
+              const speaker = normalizeSpeaker(word.speaker);
+              if (speaker !== currentSpeaker) {
                 if (currentText.trim()) {
                   diarizedSegments.push({
                     id: `diarized-${segIdx++}`,
                     text: currentText.trim(),
                     timestamp: Date.now(),
-                    speaker: currentSpeaker || undefined,
+                    speaker: currentSpeaker,
                   });
                 }
-                currentSpeaker = word.speaker;
+                currentSpeaker = speaker;
                 currentText = word.text;
               } else {
                 currentText += word.text;
@@ -177,7 +190,7 @@ export function useRealtimeTranscription() {
                 id: `diarized-${segIdx++}`,
                 text: currentText.trim(),
                 timestamp: Date.now(),
-                speaker: currentSpeaker || undefined,
+                speaker: currentSpeaker,
               });
             }
 
@@ -186,7 +199,7 @@ export function useRealtimeTranscription() {
             
             // Rebuild full transcript with speaker labels
             const diarizedTranscript = diarizedSegments
-              .map(s => `${s.speaker ? `[${s.speaker}] ` : ''}${s.text}`)
+              .map(s => `[${s.speaker}] ${s.text}`)
               .join('\n');
             setFullTranscript(diarizedTranscript);
             fullTranscriptRef.current = diarizedTranscript;
