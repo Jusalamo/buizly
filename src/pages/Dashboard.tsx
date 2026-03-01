@@ -208,7 +208,7 @@ export default function Dashboard() {
 
           {/* Quick Scan Button */}
           <Button 
-            onClick={() => navigate("/capture?scan=true")}
+            onClick={() => navigate("/quick-scan")}
             className="flex-1 min-w-0 h-auto py-4 px-4 bg-card hover:bg-card/80 border border-border text-foreground flex flex-col items-center gap-2"
             variant="outline"
           >

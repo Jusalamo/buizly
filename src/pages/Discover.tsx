@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Search, UserPlus, Users, Building, ArrowRight, Check, X, Clock, Lock, Loader2, QrCode } from "lucide-react";
+import { Search, UserPlus, Users, Building, ArrowRight, Check, X, Clock, Lock, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
@@ -26,10 +26,6 @@ export default function Discover() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"search" | "manual">("search");
-  const [scanning, setScanning] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   
   const { 
@@ -133,126 +129,6 @@ export default function Discover() {
     return getRequestStatus(profileId);
   };
 
-  // QR Scanner
-  const startScanning = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
-      });
-      streamRef.current = stream;
-      setScanning(true);
-
-      setTimeout(() => {
-        if (videoRef.current && streamRef.current) {
-          videoRef.current.srcObject = streamRef.current;
-          videoRef.current.play();
-          startDetecting();
-        }
-      }, 100);
-    } catch (error) {
-      toast({
-        title: "Camera access required",
-        description: "Please allow camera access to scan QR codes",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const stopScanning = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
-    }
-    setScanning(false);
-  };
-
-  const startDetecting = () => {
-    if (!('BarcodeDetector' in window)) {
-      // Fallback: try to use a canvas-based approach or notify user
-      toast({
-        title: "QR scanning not supported",
-        description: "Your browser doesn't support QR code scanning. Try Chrome on Android or Safari on iOS.",
-        variant: "destructive",
-      });
-      stopScanning();
-      return;
-    }
-
-    const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-    
-    scanIntervalRef.current = setInterval(async () => {
-      if (!videoRef.current || videoRef.current.readyState < 2) return;
-      
-      try {
-        const barcodes = await detector.detect(videoRef.current);
-        if (barcodes.length > 0) {
-          const url = barcodes[0].rawValue;
-          handleScannedUrl(url);
-          stopScanning();
-        }
-      } catch (err) {
-        // Detection failed, continue scanning
-      }
-    }, 300);
-  };
-
-  const handleScannedUrl = async (url: string) => {
-    // Extract userId from URL patterns like buizly.lovable.app/u/{userId}
-    const match = url.match(/\/u\/([a-f0-9-]+)/i);
-    if (!match) {
-      toast({
-        title: "Invalid QR code",
-        description: "This doesn't appear to be a Buizly QR code",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const targetUserId = match[1];
-    
-    // Check if it's our own profile
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user?.id === targetUserId) {
-      toast({ title: "That's your own QR code!" });
-      return;
-    }
-
-    const status = getRequestStatus(targetUserId);
-    if (status === 'accepted') {
-      toast({ title: "Already connected", description: "You're already connected with this person" });
-      navigate(`/u/${targetUserId}`);
-      return;
-    }
-    if (status === 'pending') {
-      toast({ title: "Request already sent", description: "Waiting for them to accept" });
-      return;
-    }
-
-    const result = await sendRequest(targetUserId);
-    if (result.success) {
-      toast({
-        title: "Connection request sent!",
-        description: "They'll be notified of your request",
-      });
-      navigate(`/u/${targetUserId}`);
-    }
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(t => t.stop());
-      }
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
-      }
-    };
-  }, []);
 
   return (
     <Layout>
@@ -262,35 +138,7 @@ export default function Discover() {
             <h1 className="text-2xl font-bold text-foreground mb-2">Add People</h1>
             <p className="text-muted-foreground text-sm">Find and connect with professionals</p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={scanning ? stopScanning : startScanning}
-            className="gap-2"
-          >
-            <QrCode className="h-4 w-4" />
-            {scanning ? 'Stop' : 'Scan QR'}
-          </Button>
         </div>
-
-        {/* QR Scanner */}
-        {scanning && (
-          <Card className="bg-card border-border p-4 relative overflow-hidden">
-            <video
-              ref={videoRef}
-              className="w-full rounded-lg aspect-square object-cover"
-              playsInline
-              muted
-            />
-            <div className="absolute inset-4 border-2 border-primary/50 rounded-lg pointer-events-none">
-              <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary rounded-tl-lg" />
-              <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-primary rounded-tr-lg" />
-              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-primary rounded-bl-lg" />
-              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary rounded-br-lg" />
-            </div>
-            <p className="text-center text-sm text-muted-foreground mt-2">Point your camera at a Buizly QR code</p>
-          </Card>
-        )}
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
           <TabsList className="grid w-full grid-cols-2 bg-secondary">
