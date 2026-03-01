@@ -1,154 +1,107 @@
 
+# Fixes: Prompts 1-6
 
-# Plug Visibility, Connection Flow, Privacy, Business Card, QR Scan & Speaker Diarization
+## Prompt 1: Move QR Scanner to Quick Scan Button
 
-This plan addresses multiple interconnected improvements across the app.
+**Current**: The QR scanner lives in `Discover.tsx` (Add People page). The Dashboard's "Quick Scan" button navigates to `/capture?scan=true` which is the old Capture page -- it doesn't open a scanner.
 
----
+**Fix**:
+- Remove scanner code from `Discover.tsx` (lines 29-32 refs, 136-255 scanner logic, 265-293 scanner UI, and the Scan QR button)
+- Create a new page `src/pages/QuickScan.tsx` with the scanner code (QR Mode + Card Mode toggle for future OCR) and register it at `/quick-scan` in `App.tsx`
+- Update Dashboard "Quick Scan" button to navigate to `/quick-scan` instead of `/capture?scan=true`
 
-## 1. Plugs: Both Participants See Who They're Being Introduced To
-
-**Current state**: When Person C introduces Person A and Person B, each participant can only see themselves and the "other" person. They cannot see the full picture of who is involved.
-
-**Fix**: Update `PlugsList.tsx` and `PlugIntroduction.tsx` to show all participants to each recipient. When Person A views the plug, they see: "Person C wants to introduce you to Person B" (with Person B's profile details visible). Person B sees the same but with Person A's details.
-
-### Changes:
-- **`src/components/PlugsList.tsx`**: In the "received" plug visualization, show all other participants with their full profile info (name, avatar, job title, company) instead of just avatars.
-- **`src/hooks/usePlugs.ts`**: Ensure the `respondToPlug` function, when both participants accept, triggers a mutual connection creation via a new RPC function.
+**Files**: `src/pages/Discover.tsx`, `src/pages/Dashboard.tsx`, `src/pages/QuickScan.tsx` (new), `src/App.tsx`
 
 ---
 
-## 2. Clear/Delete Introductions
+## Prompt 2: Notification Accept/Decline Instantly Removes Item
 
-**Current state**: There is no way to clear/remove a plug introduction, especially if no one acted on it.
+**Current**: In `NotificationItem.tsx`, after accept/decline, it shows a "Connection accepted!" / "Request declined" confirmation state instead of disappearing. In `NotificationList.tsx`, `onDelete` is called after the action, but the item stays visible with the confirmation state.
 
-**Fix**: Add a delete/clear action to both sent and received plugs.
+**Fix**:
+- In `NotificationItem.tsx`: After successful accept/decline, instead of showing a confirmation message, immediately call `onDelete` to remove the notification from the list. Remove the `actionTaken` state and the confirmation UI block entirely -- just keep the `isProcessing` spinner during the action.
+- The parent `NotificationList.tsx` already calls `onDelete(notificationId)` which removes it from the list.
 
-### Changes:
-- **`src/hooks/usePlugs.ts`**: Add a `deletePlug` function that:
-  - For sent plugs: deletes the plug and all participants
-  - For received plugs: removes the current user's participant record (effectively hiding it)
-- **`src/components/PlugsList.tsx`**: Add a trash/clear button on each plug card with confirmation
+**Files**: `src/components/notifications/NotificationItem.tsx`
 
 ---
 
-## 3. Mutual Connection on Plug Accept
+## Prompt 3: Speaker Diarization Fix
 
-**Current state**: When a participant accepts a plug, their status updates to "accepted" but no actual connection is created between participants.
+**Current**: The `elevenlabs-transcribe` edge function sends `diarize: true` and `num_speakers` to the ElevenLabs API. The response processing in `useRealtimeTranscription.ts` looks for `data.words` with speaker labels. The issue is likely that:
+1. The edge function uses `formData.append("diarize", "true")` but the ElevenLabs API parameter might be `enable_speaker_diarization` per their docs
+2. The word grouping logic doesn't handle the ElevenLabs response format correctly (speaker IDs may be numeric, not strings)
 
-**Fix**: When ALL participants of a plug have accepted, automatically create mutual connections between them using the existing `accept_connection_request` pattern.
+**Fix**:
+- Update `elevenlabs-transcribe/index.ts` to use the correct API parameter name (`enable_speaker_diarization` instead of `diarize`)
+- Add response logging for debugging
+- In `useRealtimeTranscription.ts`, make the speaker label parsing more robust -- handle both `speaker_0` format and numeric speaker IDs
 
-### Changes:
-- **`src/hooks/usePlugs.ts`**: After `respondToPlug` succeeds with `accept=true`, check if all participants have accepted. If yes, create bidirectional connections between all participants by inserting into the `connections` table for each pair.
-- Add notifications to each participant confirming the new connections.
-
----
-
-## 4. Private Profile Visibility Fix
-
-**Current state**: The Settings page has a profile visibility selector (Public/Connections/Private) that saves to the database. However, the `PublicProfile.tsx` page already handles private visibility by showing only name and avatar. The issue is that when set to "private," it should also show the user's company/business but hide contact info (email, phone).
-
-**Fix**: Update the private profile view to show name, avatar, AND company/job title, but hide contact details.
-
-### Changes:
-- **`src/pages/PublicProfile.tsx`**: Update the private profile view (lines 196-218) to also fetch and display `job_title` and `company` from the public profile RPC. Update the `get_public_profile_safe` data display to include these fields.
-- **`src/hooks/useProfileSearch.ts`**: Ensure private profiles in search results show name and company but no contact info (already partially done with `isPrivate` flag).
+**Files**: `supabase/functions/elevenlabs-transcribe/index.ts`, `src/hooks/useRealtimeTranscription.ts`
 
 ---
 
-## 5. Business Card View for QR Code Scans
+## Prompt 4: Profile/Business Card Toggle on Public Profile
 
-**Current state**: When someone scans a QR code, they see a full profile page (`PublicProfile.tsx`) with a social media-like layout. The user wants a proper business card layout instead.
+**Current**: `PublicProfile.tsx` shows a single business card layout for all visitors.
 
-**Fix**: Redesign the `PublicProfile.tsx` to render as a digital business card when accessed via QR scan. The card should display:
-- Profile photo and business logo
-- Name, job title, company
-- Phone, email
-- Arranged in a business card layout (compact, professional)
+**Fix**:
+- Add a `viewMode` state toggle: `'profile'` (default) and `'card'`
+- **Profile View**: Full profile page with avatar, name, bio, gallery, social links, contact details (existing layout, slightly restructured)
+- **Business Card View**: Compact horizontal card with logo on left, name/email/phone on right, QR code on the side, styled like a real business card
+- Add toggle buttons at the top of the page to switch between views
 
-### Changes:
-- **`src/pages/PublicProfile.tsx`**: Redesign the main profile display to use a business card layout:
-  - Horizontal card-like container with profile photo on the left
-  - Name, title, company stacked on the right
-  - Contact details (phone, email) displayed below in a clean row
-  - Keep the "Save Contact" and "Open App" buttons below the card
-  - Remove the social media-style vertical layout
+**Files**: `src/pages/PublicProfile.tsx`
 
 ---
 
-## 6. Remove Requests Tab from Add Page
+## Prompt 5: Theme Selector Saves & Applies to Business Card/Profile
 
-**Current state**: The Discover page has three tabs: Find, Requests, Manual. Connection requests should only appear in notifications.
+**Current**: `BusinessCardCustomizer.tsx` has a save button and preview section. The `onSave` prop is available but the parent (`Settings.tsx`) doesn't pass it -- the component renders standalone without connecting to the database.
 
-**Fix**: Remove the "Requests" tab entirely from `Discover.tsx`. Connection request notifications (accept/decline/new request) will be handled through the existing notification system.
+**Fix**:
+- In `Settings.tsx`, pass an `onSave` handler to `BusinessCardCustomizer` that writes the customization to `user_settings` table (columns `qr_foreground`, `qr_background`, `accent_color` already exist)
+- Pass `initialCustomization` from the current user settings
+- Remove the inline "Preview" section from `BusinessCardCustomizer.tsx` (the card preview at lines 396-457) since the user doesn't want it
+- Keep the "Save Customization" button
 
-### Changes:
-- **`src/pages/Discover.tsx`**: 
-  - Remove the "Requests" tab trigger and content (lines 186-197 and 367-529)
-  - Change grid from `grid-cols-3` to `grid-cols-2`
-  - Remove the request count badge
-  - Remove `processingRequestId`, `processingAction` state and handlers
-  - Remove `useConnectionRequests` import (unless needed for `getRequestStatus` in search)
-  - Keep `getRequestStatus` and `sendRequest` for the Find tab
-- **`src/components/BottomNav.tsx`**: Update the notification count for "Add" tab -- remove `incomingRequests.length` since requests now only show in notifications.
+**Files**: `src/pages/Settings.tsx`, `src/components/BusinessCardCustomizer.tsx`
 
 ---
 
-## 7. QR Code Scanner for Connection Requests
+## Prompt 6: Auto-Generate Business Card Layout
 
-**Current state**: The "Quick Scan" or camera functionality should scan QR codes and create connection requests based on the scanned user's profile.
+**Current**: The business card preview in `BusinessCardCustomizer.tsx` shows placeholder text ("Your Name", "Job Title - Company"). The actual public profile card in `PublicProfile.tsx` already auto-generates with real user data.
 
-**Fix**: The QR scan flow should: scan QR code -> extract user ID from the URL -> send a connection request to that user.
+**Fix**:
+- In `BusinessCardCustomizer.tsx`, fetch the user's profile data and use it in the preview instead of placeholders (show real name, title, email, phone)
+- Add a small QR code to the preview card layout
+- Ensure the `PublicProfile.tsx` business card view (from Prompt 4) uses the saved theme customization colors from `user_settings`
 
-### Changes:
-- **`src/pages/Discover.tsx`** or a new scanner component: Add a "Scan QR" button that opens the device camera, reads a QR code URL (e.g., `buizly.lovable.app/u/{userId}`), extracts the userId, and calls `sendRequest(userId)` to send a connection request. If already connected, show a toast.
-- This uses the browser's native `BarcodeDetector` API or a lightweight QR scanning library.
-
----
-
-## 8. Speaker Diarization in Transcription
-
-**Current state**: The realtime transcription uses `useScribe` with `scribe_v2_realtime` model but does not support speaker diarization (realtime Scribe does not have a `num_speakers` parameter -- that is only available for batch transcription).
-
-**Fix**: Since the `scribe_v2_realtime` model does NOT support speaker diarization natively, we will:
-1. Add a speaker count selector to the transcription UI
-2. After recording stops, send the recorded audio to the **batch** transcription API (`scribe_v2`) with `enable_speaker_diarization=true` and `num_speakers` set
-3. Replace the realtime segments with the diarized result, showing speaker labels
-
-### Changes:
-- **`src/components/notes/NoteEditor.tsx`**: Add a speaker count selector (1-6) near the transcribe button
-- **`src/components/notes/TranscriptionPanel.tsx`**: Add speaker count selector UI, pass the value up
-- **`src/hooks/useRealtimeTranscription.ts`**: After stopping, if speaker count > 1, collect the audio and send to a new batch transcription edge function
-- **`supabase/functions/elevenlabs-transcribe/index.ts`** (new): Create batch transcription endpoint that accepts audio + speaker count, calls ElevenLabs batch STT API with diarization enabled, returns speaker-labeled transcript
-- **`src/components/notes/TranscriptionPanel.tsx`**: Display speaker labels (e.g., "Speaker 1", "Speaker 2") on each segment
+**Files**: `src/components/BusinessCardCustomizer.tsx`, `src/pages/PublicProfile.tsx`
 
 ---
 
-## Technical Details
+## Implementation Order
 
-### Files to Create:
-1. `supabase/functions/elevenlabs-transcribe/index.ts` -- Batch transcription with diarization
+1. Create `QuickScan.tsx` page, register route, update Dashboard link, remove scanner from Discover
+2. Fix notification item to disappear on accept/decline
+3. Fix speaker diarization API parameter and deploy edge function
+4. Add profile/card toggle to PublicProfile
+5. Connect theme selector to database and remove preview
+6. Auto-populate business card with real user data
 
-### Files to Modify:
-1. `src/components/PlugsList.tsx` -- Show full participant details, add delete button
-2. `src/hooks/usePlugs.ts` -- Add `deletePlug`, mutual connection creation on all-accept
-3. `src/pages/PublicProfile.tsx` -- Business card layout, private profile shows company
-4. `src/pages/Discover.tsx` -- Remove Requests tab, add QR scan button
-5. `src/components/BottomNav.tsx` -- Update Add tab badge count
-6. `src/components/notes/NoteEditor.tsx` -- Speaker count selector
-7. `src/components/notes/TranscriptionPanel.tsx` -- Speaker count UI, speaker labels
-8. `src/hooks/useRealtimeTranscription.ts` -- Post-recording batch diarization flow
+## Files Summary
 
-### Database Changes:
-- New RPC function `complete_plug_connections` that creates mutual connections between all accepted plug participants
-
-### Implementation Order:
-1. Remove Requests tab from Discover (simplest, reduces code)
-2. Fix private profile visibility (show name + company)
-3. Redesign PublicProfile as business card
-4. Plug participant visibility fix
-5. Plug delete/clear functionality
-6. Mutual connection on plug accept
-7. QR scanner for connection requests
-8. Speaker diarization (batch transcription edge function + UI)
-
+| Action | File |
+|--------|------|
+| Create | `src/pages/QuickScan.tsx` |
+| Modify | `src/App.tsx` (add route) |
+| Modify | `src/pages/Dashboard.tsx` (Quick Scan link) |
+| Modify | `src/pages/Discover.tsx` (remove scanner) |
+| Modify | `src/components/notifications/NotificationItem.tsx` (instant remove) |
+| Modify | `supabase/functions/elevenlabs-transcribe/index.ts` (fix API param) |
+| Modify | `src/hooks/useRealtimeTranscription.ts` (robust speaker parsing) |
+| Modify | `src/pages/PublicProfile.tsx` (profile/card toggle) |
+| Modify | `src/pages/Settings.tsx` (connect customizer to DB) |
+| Modify | `src/components/BusinessCardCustomizer.tsx` (remove preview, use real data) |
