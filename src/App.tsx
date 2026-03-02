@@ -30,6 +30,9 @@ import Discover from "./pages/Discover";
 import Calendar from "./pages/Calendar";
 import Notes from "./pages/Notes";
 import QuickScan from "./pages/QuickScan";
+import TeamHandoffs from "./pages/TeamHandoffs";
+import TeamAdmin from "./pages/TeamAdmin";
+import LeadsDashboard from "./pages/LeadsDashboard";
 import NotFound from "./pages/NotFound";
 
 // Initialize cache immediately on app load
@@ -75,6 +78,9 @@ function AppRoutes() {
       <Route path="/analytics" element={<Analytics />} />
       <Route path="/subscription" element={<Subscription />} />
       <Route path="/quick-scan" element={<QuickScan />} />
+      <Route path="/team-handoffs" element={<TeamHandoffs />} />
+      <Route path="/team-admin" element={<TeamAdmin />} />
+      <Route path="/leads" element={<LeadsDashboard />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

@@ -193,6 +193,7 @@ export type Database = {
       }
       connections: {
         Row: {
+          archived: boolean | null
           connection_avatar_url: string | null
           connection_company: string | null
           connection_email: string | null
@@ -204,10 +205,14 @@ export type Database = {
           connection_title: string | null
           created_at: string
           id: string
+          last_contacted_at: string | null
           notes: string | null
+          priority: string | null
+          reminder_date: string | null
           user_id: string
         }
         Insert: {
+          archived?: boolean | null
           connection_avatar_url?: string | null
           connection_company?: string | null
           connection_email?: string | null
@@ -219,10 +224,14 @@ export type Database = {
           connection_title?: string | null
           created_at?: string
           id?: string
+          last_contacted_at?: string | null
           notes?: string | null
+          priority?: string | null
+          reminder_date?: string | null
           user_id: string
         }
         Update: {
+          archived?: boolean | null
           connection_avatar_url?: string | null
           connection_company?: string | null
           connection_email?: string | null
@@ -234,7 +243,10 @@ export type Database = {
           connection_title?: string | null
           created_at?: string
           id?: string
+          last_contacted_at?: string | null
           notes?: string | null
+          priority?: string | null
+          reminder_date?: string | null
           user_id?: string
         }
         Relationships: [
@@ -318,6 +330,59 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      handoffs: {
+        Row: {
+          card_image_url: string | null
+          connection_id: string | null
+          contact_company: string | null
+          contact_name: string
+          created_at: string
+          from_user: string
+          id: string
+          note: string | null
+          priority: string
+          status: string
+          to_user: string
+          updated_at: string
+        }
+        Insert: {
+          card_image_url?: string | null
+          connection_id?: string | null
+          contact_company?: string | null
+          contact_name: string
+          created_at?: string
+          from_user: string
+          id?: string
+          note?: string | null
+          priority?: string
+          status?: string
+          to_user: string
+          updated_at?: string
+        }
+        Update: {
+          card_image_url?: string | null
+          connection_id?: string | null
+          contact_company?: string | null
+          contact_name?: string
+          created_at?: string
+          from_user?: string
+          id?: string
+          note?: string | null
+          priority?: string
+          status?: string
+          to_user?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "handoffs_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "connections"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       meeting_notes: {
         Row: {
@@ -1066,6 +1131,59 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      team_members: {
+        Row: {
+          id: string
+          joined_at: string
+          role: string
+          team_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          joined_at?: string
+          role?: string
+          team_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          joined_at?: string
+          role?: string
+          team_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_members_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
       }
       usage_tracking: {
         Row: {

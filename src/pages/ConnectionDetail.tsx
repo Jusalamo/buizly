@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Mail, Phone, Briefcase, Calendar, ArrowLeft, Instagram } from "lucide-react";
+import { Mail, Phone, Briefcase, Calendar, ArrowLeft, Instagram, UserPlus } from "lucide-react";
+import { AssignToColleague } from "@/components/AssignToColleague";
 import { ConnectionDetailSkeleton } from "@/components/skeletons/PageSkeletons";
 import { OptimizedAvatar } from "@/components/OptimizedAvatar";
 import type { Database } from "@/integrations/supabase/types";
@@ -20,6 +21,7 @@ export default function ConnectionDetail() {
   const { id } = useParams();
   const [connection, setConnection] = useState<Connection | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showAssign, setShowAssign] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -176,14 +178,32 @@ export default function ConnectionDetail() {
           </Card>
         )}
 
-        {/* Action Button */}
-        <Button
-          onClick={() => navigate(`/schedule?connection=${connection.id}`)}
-          className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6 text-lg"
-        >
-          <Calendar className="h-5 w-5 mr-2" />
-          Schedule Follow-up Meeting
-        </Button>
+        {/* Action Buttons */}
+        <div className="space-y-3">
+          <Button
+            onClick={() => navigate(`/schedule?connection=${connection.id}`)}
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6 text-lg"
+          >
+            <Calendar className="h-5 w-5 mr-2" />
+            Schedule Follow-up Meeting
+          </Button>
+          <Button
+            onClick={() => setShowAssign(true)}
+            variant="outline"
+            className="w-full py-6 text-lg gap-2"
+          >
+            <UserPlus className="h-5 w-5" />
+            Assign to Colleague
+          </Button>
+        </div>
+
+        <AssignToColleague
+          open={showAssign}
+          onOpenChange={setShowAssign}
+          contactName={connection.connection_name}
+          contactCompany={connection.connection_company}
+          connectionId={connection.id}
+        />
       </div>
     </Layout>
   );

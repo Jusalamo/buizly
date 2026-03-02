@@ -23,3 +23,9 @@ verify_jwt = false
 
 [functions.elevenlabs-transcribe]
 verify_jwt = true
+
+[functions.ocr-extract]
+verify_jwt = true
+
+[functions.weekly-digest]
+verify_jwt = false
