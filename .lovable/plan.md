@@ -1,107 +1,194 @@
 
-# Fixes: Prompts 1-6
+# OCR Scanner, Team Handoffs, Heat Triage & Search (Prompts 7-14)
 
-## Prompt 1: Move QR Scanner to Quick Scan Button
-
-**Current**: The QR scanner lives in `Discover.tsx` (Add People page). The Dashboard's "Quick Scan" button navigates to `/capture?scan=true` which is the old Capture page -- it doesn't open a scanner.
-
-**Fix**:
-- Remove scanner code from `Discover.tsx` (lines 29-32 refs, 136-255 scanner logic, 265-293 scanner UI, and the Scan QR button)
-- Create a new page `src/pages/QuickScan.tsx` with the scanner code (QR Mode + Card Mode toggle for future OCR) and register it at `/quick-scan` in `App.tsx`
-- Update Dashboard "Quick Scan" button to navigate to `/quick-scan` instead of `/capture?scan=true`
-
-**Files**: `src/pages/Discover.tsx`, `src/pages/Dashboard.tsx`, `src/pages/QuickScan.tsx` (new), `src/App.tsx`
+This plan covers building the OCR scanner, team handoff system, heat triage/lead management, and search/filters -- in order, frontend first then backend for each feature.
 
 ---
 
-## Prompt 2: Notification Accept/Decline Instantly Removes Item
+## Phase 1: OCR Scanner Frontend (Prompt 7)
 
-**Current**: In `NotificationItem.tsx`, after accept/decline, it shows a "Connection accepted!" / "Request declined" confirmation state instead of disappearing. In `NotificationList.tsx`, `onDelete` is called after the action, but the item stays visible with the confirmation state.
+Update `src/pages/QuickScan.tsx` to replace the placeholder Card Mode with a full camera-based card scanner experience.
 
-**Fix**:
-- In `NotificationItem.tsx`: After successful accept/decline, instead of showing a confirmation message, immediately call `onDelete` to remove the notification from the list. Remove the `actionTaken` state and the confirmation UI block entirely -- just keep the `isProcessing` spinner during the action.
-- The parent `NotificationList.tsx` already calls `onDelete(notificationId)` which removes it from the list.
+**Card Mode flow:**
+1. Camera opens with a guide box overlay ("Align card here")
+2. User taps "Capture" to take a photo (grab frame from video)
+3. Show loading state: "Extracting details..."
+4. Display an edit screen with pre-filled mock fields: Name, Company, Title, Phone, Email, Address, Website
+5. Priority selector with three options (Hot, Warm, Cold)
+6. "Save Contact" button (saves to local state for now)
 
-**Files**: `src/components/notifications/NotificationItem.tsx`
-
----
-
-## Prompt 3: Speaker Diarization Fix
-
-**Current**: The `elevenlabs-transcribe` edge function sends `diarize: true` and `num_speakers` to the ElevenLabs API. The response processing in `useRealtimeTranscription.ts` looks for `data.words` with speaker labels. The issue is likely that:
-1. The edge function uses `formData.append("diarize", "true")` but the ElevenLabs API parameter might be `enable_speaker_diarization` per their docs
-2. The word grouping logic doesn't handle the ElevenLabs response format correctly (speaker IDs may be numeric, not strings)
-
-**Fix**:
-- Update `elevenlabs-transcribe/index.ts` to use the correct API parameter name (`enable_speaker_diarization` instead of `diarize`)
-- Add response logging for debugging
-- In `useRealtimeTranscription.ts`, make the speaker label parsing more robust -- handle both `speaker_0` format and numeric speaker IDs
-
-**Files**: `supabase/functions/elevenlabs-transcribe/index.ts`, `src/hooks/useRealtimeTranscription.ts`
+**Changes:**
+- `src/pages/QuickScan.tsx`: Replace the Card Mode placeholder with camera view, capture logic, extraction loading state, edit form with mock data, and priority selector
 
 ---
 
-## Prompt 4: Profile/Business Card Toggle on Public Profile
+## Phase 2: OCR Backend Integration (Prompt 8)
 
-**Current**: `PublicProfile.tsx` shows a single business card layout for all visitors.
+Connect Card Mode to Google Cloud Vision API for real OCR text extraction.
 
-**Fix**:
-- Add a `viewMode` state toggle: `'profile'` (default) and `'card'`
-- **Profile View**: Full profile page with avatar, name, bio, gallery, social links, contact details (existing layout, slightly restructured)
-- **Business Card View**: Compact horizontal card with logo on left, name/email/phone on right, QR code on the side, styled like a real business card
-- Add toggle buttons at the top of the page to switch between views
+**Changes:**
+- Create `supabase/functions/ocr-extract/index.ts`: Accepts an image, calls Google Cloud Vision API for text detection, parses extracted text using regex patterns for email, phone, name, company, etc., returns structured contact fields
+- Update `src/pages/QuickScan.tsx`: Replace mock data with real API call to the edge function; on success, populate edit form with parsed fields; on "Save Contact", insert into `connections` table and optionally store the card image in storage
+- Generate vCard file download after save
 
-**Files**: `src/pages/PublicProfile.tsx`
+**Secret required:** `GOOGLE_CLOUD_VISION_API_KEY` -- will need to be added via the secrets tool.
 
----
-
-## Prompt 5: Theme Selector Saves & Applies to Business Card/Profile
-
-**Current**: `BusinessCardCustomizer.tsx` has a save button and preview section. The `onSave` prop is available but the parent (`Settings.tsx`) doesn't pass it -- the component renders standalone without connecting to the database.
-
-**Fix**:
-- In `Settings.tsx`, pass an `onSave` handler to `BusinessCardCustomizer` that writes the customization to `user_settings` table (columns `qr_foreground`, `qr_background`, `accent_color` already exist)
-- Pass `initialCustomization` from the current user settings
-- Remove the inline "Preview" section from `BusinessCardCustomizer.tsx` (the card preview at lines 396-457) since the user doesn't want it
-- Keep the "Save Customization" button
-
-**Files**: `src/pages/Settings.tsx`, `src/components/BusinessCardCustomizer.tsx`
+**Database:** Create a storage bucket `card-images` for storing scanned card photos.
 
 ---
 
-## Prompt 6: Auto-Generate Business Card Layout
+## Phase 3: Team Handoff Frontend (Prompt 9)
 
-**Current**: The business card preview in `BusinessCardCustomizer.tsx` shows placeholder text ("Your Name", "Job Title - Company"). The actual public profile card in `PublicProfile.tsx` already auto-generates with real user data.
+Add team handoff UI with mock data.
 
-**Fix**:
-- In `BusinessCardCustomizer.tsx`, fetch the user's profile data and use it in the preview instead of placeholders (show real name, title, email, phone)
-- Add a small QR code to the preview card layout
-- Ensure the `PublicProfile.tsx` business card view (from Prompt 4) uses the saved theme customization colors from `user_settings`
-
-**Files**: `src/components/BusinessCardCustomizer.tsx`, `src/pages/PublicProfile.tsx`
+**Changes:**
+- Create `src/components/AssignToColleague.tsx`: A dialog/modal triggered by an "Assign to Colleague" button. Contains: colleague selector (dropdown from mock team list), context notes textarea, priority selector (Hot/Warm/Cold), attached card image preview
+- Update `src/pages/ConnectionDetail.tsx`: Add "Assign to Colleague" button that opens the dialog
+- Create `src/pages/TeamHandoffs.tsx`: New page with two tabs: "Assigned to Me" and "Assigned by Me", showing mock handoff cards with status badges
+- Register `/team-handoffs` route in `src/App.tsx`
+- Add "Team Handoffs" link to Dashboard or navigation
 
 ---
 
-## Implementation Order
+## Phase 4: Team Handoff Backend (Prompt 10)
 
-1. Create `QuickScan.tsx` page, register route, update Dashboard link, remove scanner from Discover
-2. Fix notification item to disappear on accept/decline
-3. Fix speaker diarization API parameter and deploy edge function
-4. Add profile/card toggle to PublicProfile
-5. Connect theme selector to database and remove preview
-6. Auto-populate business card with real user data
+Create database tables and wire up the handoff system.
+
+**Database migration:**
+```sql
+-- Teams table
+CREATE TABLE public.teams (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  created_by UUID NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Team members
+CREATE TABLE public.team_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id UUID REFERENCES public.teams(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID NOT NULL,
+  role TEXT DEFAULT 'member',
+  joined_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Handoffs
+CREATE TABLE public.handoffs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  from_user UUID NOT NULL,
+  to_user UUID NOT NULL,
+  connection_id UUID REFERENCES public.connections(id),
+  contact_name TEXT NOT NULL,
+  contact_company TEXT,
+  note TEXT,
+  priority TEXT DEFAULT 'warm',
+  status TEXT DEFAULT 'pending',
+  card_image_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+With RLS policies: users can see handoffs where they are from_user or to_user; team members can view other members.
+
+**Changes:**
+- Update `src/components/AssignToColleague.tsx`: Replace mock data with real team member queries and handoff insertion
+- Update `src/pages/TeamHandoffs.tsx`: Replace mock data with real database queries
+- Create notification on handoff: "[Name] assigned you a contact: [Person] from [Company]"
+- Add status tracking: Pending, Contacted, Deal Closed, Lost
+
+---
+
+## Phase 5: Team Admin Dashboard (Prompt 11)
+
+**Changes:**
+- Create `src/pages/TeamAdmin.tsx`: Admin dashboard with three sections:
+  1. Member management: list team members, invite (by email), remove, change roles
+  2. Handoff analytics: total handoffs, conversion rate (Deal Closed / total), top givers/receivers
+  3. CSV export button for team contacts
+- Register `/team-admin` route in `src/App.tsx`
+- Add admin check using a `team_members.role = 'admin'` query
+- Create `src/hooks/useTeam.ts`: Hook for team CRUD operations
+
+---
+
+## Phase 6: Heat Triage Frontend (Prompt 12)
+
+Add lead priority system with dashboard tabs.
+
+**Changes:**
+- Create `src/components/PriorityPopup.tsx`: Modal that appears when saving ANY contact, asking "How hot is this lead?" with options: Hot (follow up within 24h), Warm (follow up this week), Cold (archive), Later (custom reminder date picker)
+- Update `src/pages/QuickScan.tsx`: Show PriorityPopup after saving a scanned contact
+- Update `src/pages/Discover.tsx`: Show PriorityPopup after adding a manual connection
+- Create `src/pages/LeadsDashboard.tsx` or update Dashboard with three tabs:
+  - Hot Leads: Large pinned cards with "Mark Contacted" button
+  - Warm Contacts: List view with "Message" button
+  - My Library: All contacts
+- Use mock data initially
+
+---
+
+## Phase 7: Heat Triage Backend (Prompt 13)
+
+**Database migration:**
+```sql
+ALTER TABLE public.connections 
+  ADD COLUMN priority TEXT DEFAULT 'warm',
+  ADD COLUMN reminder_date TIMESTAMPTZ,
+  ADD COLUMN last_contacted_at TIMESTAMPTZ,
+  ADD COLUMN archived BOOLEAN DEFAULT false;
+```
+
+**Changes:**
+- Update `src/components/PriorityPopup.tsx`: Save priority to connections table
+- Update `src/pages/LeadsDashboard.tsx`: Query connections filtered by priority
+- Create `supabase/functions/weekly-digest/index.ts`: Checks for unmessaged warm contacts, creates notification: "You have X warm contacts you haven't messaged: [names]"
+- Add "Message on WhatsApp" button: opens `https://wa.me/{phone}` with the contact's number
+- Auto-archive: contacts marked Cold for over 6 months get `archived = true`
+- Set up a cron job for the weekly digest
+
+---
+
+## Phase 8: Search & Filters (Prompt 14)
+
+**Changes:**
+- Create `src/components/ContactFilters.tsx`: Filter bar with dropdowns for priority, date range, company, assigned status
+- Create `src/hooks/useContactSearch.ts`: Hook that queries connections with filters applied
+- Update contact views (Network, LeadsDashboard, TeamHandoffs) to include the filter bar and search input
+- Search across name, company, and notes fields using Supabase `ilike` queries
+
+---
 
 ## Files Summary
 
 | Action | File |
 |--------|------|
-| Create | `src/pages/QuickScan.tsx` |
-| Modify | `src/App.tsx` (add route) |
-| Modify | `src/pages/Dashboard.tsx` (Quick Scan link) |
-| Modify | `src/pages/Discover.tsx` (remove scanner) |
-| Modify | `src/components/notifications/NotificationItem.tsx` (instant remove) |
-| Modify | `supabase/functions/elevenlabs-transcribe/index.ts` (fix API param) |
-| Modify | `src/hooks/useRealtimeTranscription.ts` (robust speaker parsing) |
-| Modify | `src/pages/PublicProfile.tsx` (profile/card toggle) |
-| Modify | `src/pages/Settings.tsx` (connect customizer to DB) |
-| Modify | `src/components/BusinessCardCustomizer.tsx` (remove preview, use real data) |
+| Modify | `src/pages/QuickScan.tsx` (Card Mode camera + OCR form) |
+| Create | `supabase/functions/ocr-extract/index.ts` (Google Vision OCR) |
+| Create | `src/components/AssignToColleague.tsx` (handoff dialog) |
+| Create | `src/pages/TeamHandoffs.tsx` (handoff tracking page) |
+| Create | `src/pages/TeamAdmin.tsx` (admin dashboard) |
+| Create | `src/hooks/useTeam.ts` (team operations hook) |
+| Create | `src/components/PriorityPopup.tsx` (lead triage modal) |
+| Create | `src/pages/LeadsDashboard.tsx` or modify Dashboard (lead tabs) |
+| Create | `supabase/functions/weekly-digest/index.ts` (warm contact digest) |
+| Create | `src/components/ContactFilters.tsx` (search + filter bar) |
+| Create | `src/hooks/useContactSearch.ts` (filtered contact queries) |
+| Modify | `src/pages/ConnectionDetail.tsx` (add assign button) |
+| Modify | `src/pages/Discover.tsx` (priority popup on add) |
+| Modify | `src/App.tsx` (new routes) |
+| Modify | `src/components/BottomNav.tsx` (team handoffs link) |
+| DB Migration | teams, team_members, handoffs tables |
+| DB Migration | priority + reminder_date columns on connections |
+
+## Implementation Order
+
+1. QuickScan Card Mode frontend (mock data)
+2. OCR edge function + backend integration
+3. Team Handoff frontend (mock data)
+4. Team Handoff backend (tables + real data)
+5. Team Admin dashboard
+6. Heat Triage frontend (priority popup + dashboard tabs)
+7. Heat Triage backend (columns + digest + WhatsApp)
+8. Search & Filters across all views
