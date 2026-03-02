@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { QRCode } from "@/components/QRCode";
-import { Users, Calendar as CalendarIcon, StickyNote, QrCode, Clock, ChevronRight, Filter, UserPlus, FileText } from "lucide-react";
+import { Users, Calendar as CalendarIcon, StickyNote, QrCode, Clock, ChevronRight, Filter, UserPlus, FileText, Flame, ArrowRightLeft } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useConnectionRequests } from "@/hooks/useConnectionRequests";
 import { useAppCache } from "@/hooks/useAppCache";
@@ -228,6 +228,30 @@ export default function Dashboard() {
               <CalendarIcon className="h-5 w-5 text-primary" />
             </div>
             <span className="text-sm font-medium">Calendar</span>
+          </Button>
+
+          {/* Leads Button */}
+          <Button 
+            onClick={() => navigate("/leads")}
+            className="flex-1 min-w-0 h-auto py-4 px-4 bg-card hover:bg-card/80 border border-border text-foreground flex flex-col items-center gap-2"
+            variant="outline"
+          >
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Flame className="h-5 w-5 text-primary" />
+            </div>
+            <span className="text-sm font-medium">Leads</span>
+          </Button>
+
+          {/* Handoffs Button */}
+          <Button 
+            onClick={() => navigate("/team-handoffs")}
+            className="flex-1 min-w-0 h-auto py-4 px-4 bg-card hover:bg-card/80 border border-border text-foreground flex flex-col items-center gap-2"
+            variant="outline"
+          >
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <ArrowRightLeft className="h-5 w-5 text-primary" />
+            </div>
+            <span className="text-sm font-medium">Handoffs</span>
           </Button>
         </div>
 
